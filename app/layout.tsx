@@ -20,7 +20,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         <QueryProvider>
-          <div className="min-h-screen bg-background">
+          <div className="min-h-screen bg-background flex flex-col">
             <nav className="border-b">
               <div className="container mx-auto px-4 py-4">
                 <div className="flex items-center justify-between">
@@ -33,7 +33,12 @@ export default function RootLayout({
                 </div>
               </div>
             </nav>
-            <main>{children}</main>
+            <main className="flex-1">{children}</main>
+            <footer className="border-t py-4 mt-8">
+              <div className="container mx-auto px-4 text-center">
+                <p className="text-sm text-gray-400">v1.3.1</p>
+              </div>
+            </footer>
           </div>
           <Toaster />
         </QueryProvider>

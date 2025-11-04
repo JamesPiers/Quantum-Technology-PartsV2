@@ -5,15 +5,12 @@ import { useRouter } from 'next/navigation'
 import { useDropzone } from 'react-dropzone'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { useToast } from '@/components/ui/use-toast'
 import { Upload, FileText, Loader2 } from 'lucide-react'
 
 export default function UploadPage() {
   const router = useRouter()
   const { toast } = useToast()
-  const [supplierId, setSupplierId] = useState('')
   const [isUploading, setIsUploading] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
 
@@ -30,10 +27,10 @@ export default function UploadPage() {
   })
 
   const handleUpload = async () => {
-    if (!selectedFile || !supplierId) {
+    if (!selectedFile) {
       toast({
         title: 'Error',
-        description: 'Please select a file and enter a supplier ID',
+        description: 'Please select a file',
         variant: 'destructive',
       })
       return
@@ -49,7 +46,6 @@ export default function UploadPage() {
         body: JSON.stringify({
           fileName: selectedFile.name,
           fileType: selectedFile.type,
-          supplierId,
         }),
       })
 
@@ -114,24 +110,10 @@ export default function UploadPage() {
           <CardHeader>
             <CardTitle>Upload Supplier Quote</CardTitle>
             <CardDescription>
-              Upload a PDF supplier quote to automatically extract parts and pricing
+              Upload a PDF supplier quote to automatically extract parts, pricing, and supplier information
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="supplierId">Supplier ID</Label>
-              <Input
-                id="supplierId"
-                placeholder="Enter supplier UUID"
-                value={supplierId}
-                onChange={(e) => setSupplierId(e.target.value)}
-                disabled={isUploading}
-              />
-              <p className="text-sm text-muted-foreground">
-                For testing, you can use any valid UUID format
-              </p>
-            </div>
-
             <div
               {...getRootProps()}
               className={`border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-colors ${
@@ -166,7 +148,7 @@ export default function UploadPage() {
 
             <Button
               onClick={handleUpload}
-              disabled={!selectedFile || !supplierId || isUploading}
+              disabled={!selectedFile || isUploading}
               className="w-full"
             >
               {isUploading ? (

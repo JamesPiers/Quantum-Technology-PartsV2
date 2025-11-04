@@ -15,9 +15,10 @@ export async function POST(request: NextRequest) {
 
     const { fileName, fileType, supplierId } = validated;
 
-    // Generate unique file path
+    // Generate unique file path (use 'pending' folder if no supplier ID yet)
     const timestamp = Date.now();
-    const filePath = `${supplierId}/${timestamp}-${fileName}`;
+    const folder = supplierId || 'pending';
+    const filePath = `${folder}/${timestamp}-${fileName}`;
 
     // Create signed upload URL
     const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
@@ -27,7 +28,7 @@ export async function POST(request: NextRequest) {
     if (uploadError) {
       logger.error('Failed to create signed upload URL', {
         error: uploadError.message,
-        supplierId,
+        supplierId: supplierId || 'pending',
       });
       return NextResponse.json(
         { error: 'Failed to create upload URL' },
@@ -35,11 +36,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create document record
+    // Create document record (supplier_id will be set after extraction)
     const { data: document, error: docError } = await supabaseAdmin
       .from('documents')
       .insert({
-        supplier_id: supplierId,
+        supplier_id: supplierId || null,
         file_path: filePath,
         doc_type: 'quote',
         status: 'uploaded',
@@ -50,7 +51,7 @@ export async function POST(request: NextRequest) {
     if (docError) {
       logger.error('Failed to create document record', {
         error: docError.message,
-        supplierId,
+        supplierId: supplierId || 'pending',
       });
       return NextResponse.json(
         { error: 'Failed to create document record' },
@@ -60,7 +61,7 @@ export async function POST(request: NextRequest) {
 
     logger.info('Upload URL created', {
       documentId: document.id,
-      supplierId,
+      supplierId: supplierId || 'pending',
       filePath,
     });
 

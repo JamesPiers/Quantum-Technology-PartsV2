@@ -8,7 +8,7 @@ import { z } from 'zod';
 export const uploadRequestSchema = z.object({
   fileName: z.string().min(1),
   fileType: z.string().min(1),
-  supplierId: z.string().uuid(),
+  supplierId: z.string().uuid().optional(), // Optional - will be determined from PDF
 });
 
 export const uploadResponseSchema = z.object({
@@ -20,7 +20,7 @@ export const uploadResponseSchema = z.object({
 // Extract API
 export const extractRequestSchema = z.object({
   documentId: z.string().uuid(),
-  provider: z.enum(['docai', 'openai']).optional(),
+  provider: z.enum(['docai', 'openai', 'mock']).optional(), // Added 'mock' provider
 });
 
 export const extractResponseSchema = z.object({

@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/client';
 import { extractRequestSchema } from '@/lib/schemas/api.schema';
 import { extractionService } from '@/lib/services/extraction/extraction.service';
+import { findOrCreateSupplier } from '@/lib/services/supplier.service';
 import { logger } from '@/lib/utils/logger';
 
 export async function POST(request: NextRequest) {
@@ -62,6 +63,39 @@ export async function POST(request: NextRequest) {
       },
       provider
     );
+
+    // Find or create supplier based on extracted supplier name
+    let supplierId = document.supplier_id;
+    
+    if (result.normalized.supplier_name) {
+      try {
+        supplierId = await findOrCreateSupplier({
+          supplierName: result.normalized.supplier_name,
+          currency: result.normalized.currency,
+        });
+
+        // Update document with the correct supplier_id
+        if (supplierId !== document.supplier_id) {
+          await supabaseAdmin
+            .from('documents')
+            .update({ supplier_id: supplierId })
+            .eq('id', documentId);
+
+          logger.info('Updated document with supplier', {
+            documentId,
+            supplierId,
+            supplierName: result.normalized.supplier_name,
+          });
+        }
+      } catch (error) {
+        logger.error('Failed to find/create supplier', {
+          documentId,
+          supplierName: result.normalized.supplier_name,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        // Continue with extraction even if supplier matching fails
+      }
+    }
 
     // Save extraction results
     const { data: extraction, error: extractionError } = await supabaseAdmin

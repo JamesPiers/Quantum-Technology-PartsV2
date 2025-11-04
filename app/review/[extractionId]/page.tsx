@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
@@ -8,9 +8,28 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/components/ui/use-toast'
-import { Loader2, CheckCircle, XCircle } from 'lucide-react'
-import { supabase } from '@/lib/supabase/client'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { Loader2, CheckCircle, XCircle, ExternalLink, Pencil } from 'lucide-react'
 import { Extraction } from '@/lib/types/database.types'
+
+interface LineItem {
+  supplier_part_number: string
+  description: string
+  uom?: string
+  qty_breaks: Array<{
+    min_qty: number
+    unit_price: number
+  }>
+  lead_time_days?: number
+  moq?: number
+}
 
 export default function ReviewPage({
   params,
@@ -21,21 +40,53 @@ export default function ReviewPage({
   const { toast } = useToast()
   const [isApproving, setIsApproving] = useState(false)
   const [isRejecting, setIsRejecting] = useState(false)
+  const [editingLineItem, setEditingLineItem] = useState<number | null>(null)
+  const [lineItems, setLineItems] = useState<LineItem[]>([])
+  const [supplierInfo, setSupplierInfo] = useState({
+    supplier_name: '',
+    quote_number: '',
+    quote_date: '',
+    currency: '',
+    valid_until: '',
+  })
+  const [documentUrl, setDocumentUrl] = useState<string | null>(null)
 
   // Fetch extraction data
-  const { data: extraction, isLoading } = useQuery({
+  const { data: extraction, isLoading, error } = useQuery({
     queryKey: ['extraction', params.extractionId],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('extractions')
-        .select('*, documents(*)')
-        .eq('id', params.extractionId)
-        .single()
-
-      if (error) throw error
-      return data as Extraction & { documents: any }
+      const response = await fetch(`/api/extractions/${params.extractionId}`)
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch extraction')
+      }
+      
+      return response.json() as Promise<Extraction & { documents: any }>
     },
   })
+
+  // Initialize state when extraction data is loaded
+  useEffect(() => {
+    if (extraction?.normalized_json) {
+      const normalized = extraction.normalized_json as any
+      setSupplierInfo({
+        supplier_name: normalized.supplier_name || '',
+        quote_number: normalized.quote_number || '',
+        quote_date: normalized.quote_date || '',
+        currency: normalized.currency || '',
+        valid_until: normalized.valid_until || '',
+      })
+      setLineItems(normalized.line_items || [])
+    }
+
+    // Get signed URL for document
+    if (extraction?.documents?.file_path) {
+      fetch(`/api/documents/${extraction.document_id}/url`)
+        .then(res => res.json())
+        .then(data => setDocumentUrl(data.signedUrl))
+        .catch(err => console.error('Failed to get document URL:', err))
+    }
+  }, [extraction])
 
   const handleApprove = async () => {
     setIsApproving(true)
@@ -76,10 +127,16 @@ export default function ReviewPage({
     setIsRejecting(true)
 
     try {
-      await supabase
-        .from('extractions')
-        .update({ status: 'rejected' })
-        .eq('id', params.extractionId)
+      const response = await fetch(
+        `/api/extractions/${params.extractionId}/reject`,
+        {
+          method: 'POST',
+        }
+      )
+
+      if (!response.ok) {
+        throw new Error('Failed to reject extraction')
+      }
 
       toast({
         title: 'Rejected',
@@ -107,6 +164,21 @@ export default function ReviewPage({
     )
   }
 
+  if (error) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <Card>
+          <CardContent className="py-8 text-center">
+            <XCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
+            <p className="text-muted-foreground">
+              {error instanceof Error ? error.message : 'Failed to load extraction'}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   if (!extraction) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -119,147 +191,252 @@ export default function ReviewPage({
     )
   }
 
-  const normalized = extraction.normalized_json as any
+  const updateLineItem = (index: number, field: keyof LineItem, value: any) => {
+    const updatedLineItems = [...lineItems]
+    updatedLineItems[index] = { ...updatedLineItems[index], [field]: value }
+    setLineItems(updatedLineItems)
+  }
+
+  const updateSupplierInfo = (field: string, value: string) => {
+    setSupplierInfo({ ...supplierInfo, [field]: value })
+  }
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="max-w-6xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold mb-2">Review Extraction</h1>
-          <p className="text-muted-foreground">
-            Review the extracted data and approve or reject
-          </p>
+      <div className="max-w-7xl mx-auto">
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold mb-2">Review Extraction</h1>
+            <p className="text-muted-foreground">
+              Review the extracted data and approve or reject
+            </p>
+          </div>
+          {documentUrl && (
+            <Button variant="outline" asChild>
+              <a
+                href={documentUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <ExternalLink className="mr-2 h-4 w-4" />
+                View Document
+              </a>
+            </Button>
+          )}
         </div>
 
-        <div className="grid lg:grid-cols-2 gap-6">
-          {/* Left: PDF Viewer (placeholder) */}
+        <div className="space-y-6">
+          {/* Supplier Information */}
           <Card>
             <CardHeader>
-              <CardTitle>Document</CardTitle>
+              <CardTitle>Supplier Information</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="aspect-[8.5/11] bg-muted rounded-lg flex items-center justify-center">
-                <p className="text-muted-foreground">PDF Viewer Placeholder</p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label>Supplier Name</Label>
+                  <Input
+                    value={supplierInfo.supplier_name}
+                    onChange={(e) => updateSupplierInfo('supplier_name', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label>Quote Number</Label>
+                  <Input
+                    value={supplierInfo.quote_number}
+                    onChange={(e) => updateSupplierInfo('quote_number', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label>Quote Date</Label>
+                  <Input
+                    type="date"
+                    value={supplierInfo.quote_date}
+                    onChange={(e) => updateSupplierInfo('quote_date', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label>Currency</Label>
+                  <Input
+                    value={supplierInfo.currency}
+                    onChange={(e) => updateSupplierInfo('currency', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label>Valid Until</Label>
+                  <Input
+                    type="date"
+                    value={supplierInfo.valid_until}
+                    onChange={(e) => updateSupplierInfo('valid_until', e.target.value)}
+                  />
+                </div>
               </div>
-              <p className="text-sm text-muted-foreground mt-2">
-                File: {extraction.documents?.file_path || 'N/A'}
-              </p>
             </CardContent>
           </Card>
 
-          {/* Right: Extracted Data */}
-          <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Supplier Information</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label>Supplier Name</Label>
-                  <Input value={normalized.supplier_name || ''} readOnly />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>Quote Number</Label>
-                    <Input value={normalized.quote_number || ''} readOnly />
-                  </div>
-                  <div>
-                    <Label>Quote Date</Label>
-                    <Input value={normalized.quote_date || ''} readOnly />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>Currency</Label>
-                    <Input value={normalized.currency || ''} readOnly />
-                  </div>
-                  <div>
-                    <Label>Valid Until</Label>
-                    <Input value={normalized.valid_until || ''} readOnly />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Line Items ({normalized.line_items?.length || 0})</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4 max-h-[400px] overflow-y-auto">
-                  {normalized.line_items?.map((item: any, index: number) => (
-                    <div
-                      key={index}
-                      className="border rounded-lg p-4 space-y-2"
-                    >
-                      <div className="font-medium">{item.description}</div>
-                      <div className="text-sm text-muted-foreground">
-                        Part #: {item.supplier_part_number}
-                      </div>
-                      <div className="text-sm">
-                        <span className="font-medium">Pricing:</span>
-                        {item.qty_breaks?.map((qb: any, qbIndex: number) => (
-                          <div key={qbIndex} className="ml-4">
-                            {qb.min_qty}+ qty: ${qb.unit_price}
-                          </div>
-                        ))}
-                      </div>
-                      {item.lead_time_days && (
+          {/* Line Items Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Line Items ({lineItems.length})</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[150px]">Part Number</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead className="w-[100px]">UOM</TableHead>
+                    <TableHead className="w-[150px]">Pricing</TableHead>
+                    <TableHead className="w-[100px]">Lead Time</TableHead>
+                    <TableHead className="w-[100px]">MOQ</TableHead>
+                    <TableHead className="w-[80px]">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {lineItems.map((item, index) => (
+                    <TableRow key={index}>
+                      <TableCell>
+                        {editingLineItem === index ? (
+                          <Input
+                            value={item.supplier_part_number}
+                            onChange={(e) =>
+                              updateLineItem(index, 'supplier_part_number', e.target.value)
+                            }
+                            className="h-8"
+                          />
+                        ) : (
+                          <div className="font-medium">{item.supplier_part_number}</div>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {editingLineItem === index ? (
+                          <Input
+                            value={item.description}
+                            onChange={(e) =>
+                              updateLineItem(index, 'description', e.target.value)
+                            }
+                            className="h-8"
+                          />
+                        ) : (
+                          <div>{item.description}</div>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {editingLineItem === index ? (
+                          <Input
+                            value={item.uom || ''}
+                            onChange={(e) => updateLineItem(index, 'uom', e.target.value)}
+                            className="h-8"
+                          />
+                        ) : (
+                          <div>{item.uom || '-'}</div>
+                        )}
+                      </TableCell>
+                      <TableCell>
                         <div className="text-sm">
-                          Lead Time: {item.lead_time_days} days
+                          {item.qty_breaks?.map((qb, qbIndex) => (
+                            <div key={qbIndex}>
+                              {qb.min_qty}+: ${qb.unit_price}
+                            </div>
+                          ))}
                         </div>
-                      )}
-                    </div>
+                      </TableCell>
+                      <TableCell>
+                        {editingLineItem === index ? (
+                          <Input
+                            type="number"
+                            value={item.lead_time_days || ''}
+                            onChange={(e) =>
+                              updateLineItem(index, 'lead_time_days', parseInt(e.target.value))
+                            }
+                            className="h-8"
+                          />
+                        ) : (
+                          <div>{item.lead_time_days ? `${item.lead_time_days} days` : '-'}</div>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {editingLineItem === index ? (
+                          <Input
+                            type="number"
+                            value={item.moq || ''}
+                            onChange={(e) =>
+                              updateLineItem(index, 'moq', parseInt(e.target.value))
+                            }
+                            className="h-8"
+                          />
+                        ) : (
+                          <div>{item.moq || '-'}</div>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {editingLineItem === index ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditingLineItem(null)}
+                          >
+                            Save
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditingLineItem(index)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </div>
-              </CardContent>
-            </Card>
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Actions</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <Button
-                    onClick={handleApprove}
-                    disabled={isApproving || isRejecting}
-                    className="w-full"
-                  >
-                    {isApproving ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Approving...
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle className="mr-2 h-4 w-4" />
-                        Approve
-                      </>
-                    )}
-                  </Button>
-                  <Button
-                    onClick={handleReject}
-                    disabled={isApproving || isRejecting}
-                    variant="destructive"
-                    className="w-full"
-                  >
-                    {isRejecting ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Rejecting...
-                      </>
-                    ) : (
-                      <>
-                        <XCircle className="mr-2 h-4 w-4" />
-                        Reject
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          {/* Actions */}
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex gap-4">
+                <Button
+                  onClick={handleApprove}
+                  disabled={isApproving || isRejecting}
+                  size="lg"
+                >
+                  {isApproving ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Approving...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                      Approve & Import to Catalog
+                    </>
+                  )}
+                </Button>
+                <Button
+                  onClick={handleReject}
+                  disabled={isApproving || isRejecting}
+                  variant="destructive"
+                  size="lg"
+                >
+                  {isRejecting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Rejecting...
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="mr-2 h-4 w-4" />
+                      Reject
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>
