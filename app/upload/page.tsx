@@ -243,6 +243,12 @@ export default function UploadPage() {
                 'Upload and Extract'
               )}
             </Button>
+            
+            {isUploading && (
+              <p className="text-sm text-muted-foreground text-center mt-2">
+                ⏱️ Large multi-page documents may take 1-3 minutes to process...
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>

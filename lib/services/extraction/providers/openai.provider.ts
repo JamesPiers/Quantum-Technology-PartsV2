@@ -66,7 +66,6 @@ export class OpenAIProvider implements IExtractionProvider {
       supplier_name: raw.supplier_name,
       quote_number: raw.quote_number || undefined,
       notes: raw.notes || undefined,
-      line_items: raw.line_items,
     };
 
     // Normalize dates
@@ -79,6 +78,16 @@ export class OpenAIProvider implements IExtractionProvider {
     if (raw.valid_until) {
       cleaned.valid_until = computeValidUntil(cleaned.quote_date, raw.valid_until) || normalizeDate(raw.valid_until) || undefined;
     }
+
+    // Normalize line items (convert nulls to undefined)
+    cleaned.line_items = (raw.line_items || []).map((item: any) => ({
+      supplier_part_number: item.supplier_part_number,
+      description: item.description,
+      uom: item.uom || undefined,
+      qty_breaks: item.qty_breaks,
+      lead_time_days: item.lead_time_days ?? undefined,
+      moq: item.moq ?? undefined,
+    }));
 
     return cleaned;
   }
@@ -102,13 +111,25 @@ export class OpenAIProvider implements IExtractionProvider {
 
       // Guard: Check text size
       if (pdfText.length > 500000) {
-        throw new Error(`PDF text too large: ${pdfText.length} chars (max 500k)`);
+        throw new Error(`PDF text too large: ${pdfText.length} chars (max 500k). Consider splitting multi-page quotes into separate documents.`);
       }
+
+      logger.info('PDF text extracted', {
+        documentId: options.documentId,
+        textLength: pdfText.length,
+        estimatedPages: Math.ceil(pdfText.length / 2000),
+      });
 
       // Attempt extraction with retry on validation failure
       let lastError: Error | null = null;
       for (let attempt = 1; attempt <= 2; attempt++) {
         try {
+          logger.info('Sending request to OpenAI', {
+            documentId: options.documentId,
+            attempt,
+            textLength: pdfText.length,
+          });
+
           const completion = await this.client.chat.completions.create({
             model: 'gpt-4o-mini',
             messages: [
@@ -116,17 +137,19 @@ export class OpenAIProvider implements IExtractionProvider {
                 role: 'system',
                 content: `Extract supplier quote data. Rules:
 - Return ONLY valid JSON matching the schema. No prose, no commentary.
-- Omit fields not found in the document (use null for optionals).
+- For multi-page quotes with many line items, extract ALL items systematically.
+- Use null for optional fields not found in the document (lead_time_days, moq, uom, quote_number, notes).
 - Dates: ISO 8601 format (YYYY-MM-DD).
 - Currency: 3-letter uppercase code (CAD, USD, EUR, etc.). Prefer CAD if explicitly stated.
 - qty_breaks: Extract all quantity price tiers. Each line_item must have at least one qty_break.
-- Never invent values. If uncertain, omit the field.`,
+- Never invent values. If uncertain, use null.
+- Process the entire document thoroughly, including all pages.`,
               },
               {
                 role: 'user',
                 content: attempt === 1 
-                  ? `Extract data from this supplier quote:\n\n${pdfText}`
-                  : `Previous attempt failed validation: ${lastError?.message}\n\nRetry extraction from:\n\n${pdfText}`,
+                  ? `Extract ALL data from this supplier quote (may be multi-page):\n\n${pdfText}`
+                  : `Previous attempt failed validation: ${lastError?.message}\n\nRetry extraction. Use null for missing optional fields:\n\n${pdfText}`,
               },
             ],
             response_format: {
@@ -161,8 +184,12 @@ export class OpenAIProvider implements IExtractionProvider {
             documentId: options.documentId,
             attempt,
             responseTimeMs,
+            responseTimeSec: (responseTimeMs / 1000).toFixed(1),
             tokenUsage,
             lineItemsCount: validated.line_items.length,
+            avgTimePerItem: validated.line_items.length > 0 
+              ? ((responseTimeMs / validated.line_items.length) / 1000).toFixed(2) + 's'
+              : 'N/A',
           });
 
           return {

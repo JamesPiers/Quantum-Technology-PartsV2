@@ -12,19 +12,19 @@ export const qtyBreakSchema = z.object({
 export const lineItemSchema = z.object({
   supplier_part_number: z.string().min(1),
   description: z.string().min(1),
-  uom: z.string().optional(),
+  uom: z.string().nullable().optional(),
   qty_breaks: z.array(qtyBreakSchema).min(1),
-  lead_time_days: z.number().int().min(0).optional(),
-  moq: z.number().int().min(0).optional(),
+  lead_time_days: z.number().int().min(0).nullable().optional(),
+  moq: z.number().int().min(0).nullable().optional(),
 });
 
 export const normalizedExtractionSchema = z.object({
   supplier_name: z.string().min(1),
-  quote_number: z.string().optional(),
-  quote_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be ISO 8601 format (YYYY-MM-DD)').optional(),
-  currency: z.string().length(3, 'Currency must be 3-letter code').regex(/^[A-Z]{3}$/, 'Currency must be uppercase').optional(),
-  valid_until: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be ISO 8601 format (YYYY-MM-DD)').optional(),
-  notes: z.string().optional(),
+  quote_number: z.string().nullable().optional(),
+  quote_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be ISO 8601 format (YYYY-MM-DD)').nullable().optional(),
+  currency: z.string().length(3, 'Currency must be 3-letter code').regex(/^[A-Z]{3}$/, 'Currency must be uppercase').nullable().optional(),
+  valid_until: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be ISO 8601 format (YYYY-MM-DD)').nullable().optional(),
+  notes: z.string().nullable().optional(),
   line_items: z.array(lineItemSchema).min(1),
 });
 
