@@ -16,7 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Loader2, CheckCircle, XCircle, ExternalLink, Pencil } from 'lucide-react'
+import { Loader2, CheckCircle, XCircle, ExternalLink, Pencil, ChevronDown, ChevronUp } from 'lucide-react'
 import { Extraction } from '@/lib/types/database.types'
 
 interface LineItem {
@@ -50,6 +50,8 @@ export default function ReviewPage({
     valid_until: '',
   })
   const [documentUrl, setDocumentUrl] = useState<string | null>(null)
+  const [showPrompt, setShowPrompt] = useState(false)
+  const [showRawResponse, setShowRawResponse] = useState(false)
 
   // Fetch extraction data
   const { data: extraction, isLoading, error } = useQuery({
@@ -437,6 +439,97 @@ export default function ReviewPage({
               </div>
             </CardContent>
           </Card>
+
+          {/* AI Logs Section */}
+          <div className="grid md:grid-cols-2 gap-6">
+            {/* AI Prompt Log */}
+            <Card>
+              <CardHeader
+                className="cursor-pointer hover:bg-muted/50"
+                onClick={() => setShowPrompt(!showPrompt)}
+              >
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg">AI Prompt Log</CardTitle>
+                  {showPrompt ? (
+                    <ChevronUp className="h-5 w-5" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5" />
+                  )}
+                </div>
+              </CardHeader>
+              {showPrompt && (
+                <CardContent>
+                  <div className="space-y-4">
+                    <div>
+                      <Label className="text-sm font-semibold">Provider</Label>
+                      <div className="mt-1 p-3 bg-muted rounded-md">
+                        <code className="text-sm">
+                          {extraction?.provider || 'Unknown'}
+                        </code>
+                      </div>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-semibold">Prompt Sent to AI</Label>
+                      <div className="mt-1 p-3 bg-muted rounded-md max-h-96 overflow-y-auto">
+                        <pre className="text-xs whitespace-pre-wrap break-words font-mono">
+                          {extraction?.provider === 'mock'
+                            ? 'Mock provider does not use a prompt. It returns sample data for testing purposes.'
+                            : 'Extract the following information from this supplier quote document:\n\n' +
+                              '1. Supplier Information:\n' +
+                              '   - supplier_name (string, required)\n' +
+                              '   - quote_number (string, optional)\n' +
+                              '   - quote_date (string, ISO format YYYY-MM-DD, optional)\n' +
+                              '   - currency (string, 3-letter ISO code, optional)\n' +
+                              '   - valid_until (string, ISO format YYYY-MM-DD, optional)\n' +
+                              '   - notes (string, optional)\n\n' +
+                              '2. Line Items (array of objects):\n' +
+                              '   For each part/product in the quote:\n' +
+                              '   - supplier_part_number (string, required)\n' +
+                              '   - description (string, required)\n' +
+                              '   - uom (string, unit of measure like EA, LB, etc., optional)\n' +
+                              '   - qty_breaks (array of price breaks, required):\n' +
+                              '     * min_qty (number, minimum quantity for this price)\n' +
+                              '     * unit_price (number, price per unit at this quantity)\n' +
+                              '   - lead_time_days (number, optional)\n' +
+                              '   - moq (number, minimum order quantity, optional)\n\n' +
+                              'Return the extracted data as a structured JSON object.'}
+                        </pre>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              )}
+            </Card>
+
+            {/* AI Raw Response */}
+            <Card>
+              <CardHeader
+                className="cursor-pointer hover:bg-muted/50"
+                onClick={() => setShowRawResponse(!showRawResponse)}
+              >
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg">AI Raw Response</CardTitle>
+                  {showRawResponse ? (
+                    <ChevronUp className="h-5 w-5" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5" />
+                  )}
+                </div>
+              </CardHeader>
+              {showRawResponse && (
+                <CardContent>
+                  <div>
+                    <Label className="text-sm font-semibold">Raw Response from AI</Label>
+                    <div className="mt-1 p-3 bg-muted rounded-md max-h-96 overflow-y-auto">
+                      <pre className="text-xs whitespace-pre-wrap break-words font-mono">
+                        {JSON.stringify(extraction?.raw_json, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                </CardContent>
+              )}
+            </Card>
+          </div>
         </div>
       </div>
     </div>
