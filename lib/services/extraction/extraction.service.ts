@@ -9,7 +9,7 @@ import { DocumentAIProvider } from './providers/docai.provider';
 import { MockProvider } from './providers/mock.provider';
 import { logger } from '@/lib/utils/logger';
 
-export type ProviderType = 'openai' | 'docai' | 'mock';
+export type ProviderType = 'openai' | 'docai' | 'docai-invoice' | 'mock';
 
 export class ExtractionService {
   private providers: Map<ProviderType, IExtractionProvider>;
@@ -19,7 +19,8 @@ export class ExtractionService {
     // Initialize providers
     this.providers = new Map();
     this.providers.set('openai', new OpenAIProvider());
-    this.providers.set('docai', new DocumentAIProvider());
+    this.providers.set('docai', new DocumentAIProvider('general'));
+    this.providers.set('docai-invoice', new DocumentAIProvider('invoice'));
     this.providers.set('mock', new MockProvider());
 
     // Set default provider from env or fallback to mock

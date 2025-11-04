@@ -3,21 +3,30 @@
  */
 
 import { DocumentProcessorServiceClient } from '@google-cloud/documentai';
-import { ExtractionResult, NormalizedExtraction, LineItem } from '@/lib/schemas/extraction.schema';
+import { ExtractionResult, NormalizedExtraction, LineItem, normalizedExtractionSchema } from '@/lib/schemas/extraction.schema';
 import { IExtractionProvider, ExtractionOptions } from '../types';
 import { logger } from '@/lib/utils/logger';
 import { calculateAccuracyMetrics } from '@/lib/utils/metrics';
+import { normalizeDate, normalizeCurrency, computeValidUntil } from '@/lib/utils/normalize';
 
 export class DocumentAIProvider implements IExtractionProvider {
   private client: DocumentProcessorServiceClient;
   private projectId: string;
   private location: string;
   private processorId: string;
+  private processorType: string;
 
-  constructor() {
+  constructor(processorType: 'general' | 'invoice' = 'general') {
     this.projectId = process.env.GOOGLE_PROJECT_ID!;
     this.location = process.env.GOOGLE_LOCATION || 'us';
-    this.processorId = process.env.GOOGLE_PROCESSOR_ID!;
+    this.processorType = processorType;
+
+    // Select processor ID based on type
+    if (processorType === 'invoice') {
+      this.processorId = process.env.GOOGLE_PROCESSOR_ID_INVOICE || process.env.GOOGLE_PROCESSOR_ID!;
+    } else {
+      this.processorId = process.env.GOOGLE_PROCESSOR_ID!;
+    }
 
     // Initialize client with credentials
     this.client = new DocumentProcessorServiceClient({
@@ -26,7 +35,7 @@ export class DocumentAIProvider implements IExtractionProvider {
   }
 
   getName(): string {
-    return 'docai';
+    return this.processorType === 'invoice' ? 'docai-invoice' : 'docai';
   }
 
   /**
@@ -47,13 +56,26 @@ export class DocumentAIProvider implements IExtractionProvider {
   private normalizeResponse(docAIResponse: any): NormalizedExtraction {
     const entities = docAIResponse.entities || [];
     
+    // Log available entity types for debugging
+    const entityTypes = entities.map((e: any) => e.type).filter(Boolean);
+    logger.info('DocAI entities found', {
+      provider: this.getName(),
+      entityTypes: [...new Set(entityTypes)],
+      totalEntities: entities.length,
+    });
+    
     // Extract header-level information
     const supplierName = this.findEntityValue(entities, 'supplier_name') || 'Unknown Supplier';
     const quoteNumber = this.findEntityValue(entities, 'quote_number');
-    const quoteDate = this.findEntityValue(entities, 'quote_date');
-    const currency = this.findEntityValue(entities, 'currency');
-    const validUntil = this.findEntityValue(entities, 'valid_until');
+    const rawQuoteDate = this.findEntityValue(entities, 'quote_date');
+    const rawCurrency = this.findEntityValue(entities, 'currency');
+    const rawValidUntil = this.findEntityValue(entities, 'valid_until');
     const notes = this.findEntityValue(entities, 'notes');
+
+    // Normalize dates and currency
+    const quoteDate = normalizeDate(rawQuoteDate);
+    const currency = normalizeCurrency(rawCurrency);
+    const validUntil = computeValidUntil(quoteDate, rawValidUntil) || normalizeDate(rawValidUntil);
 
     // Extract line items
     const lineItems: LineItem[] = [];
@@ -96,6 +118,15 @@ export class DocumentAIProvider implements IExtractionProvider {
       }
     }
 
+    // If no line items found, throw descriptive error
+    if (lineItems.length === 0) {
+      const errorMsg = this.processorType === 'invoice' 
+        ? 'DocAI Invoice Processor found no line items. This processor is designed for invoices, not supplier quotes. Use OpenAI or a custom-trained DocAI processor for supplier quotes.'
+        : 'DocAI General Processor found no line items. Generic processors require custom training for supplier quote entity extraction (line_item, supplier_part_number, qty_breaks, etc.). Use OpenAI for supplier quotes.';
+      
+      throw new Error(errorMsg);
+    }
+
     return {
       supplier_name: supplierName,
       quote_number: quoteNumber,
@@ -132,23 +163,40 @@ export class DocumentAIProvider implements IExtractionProvider {
     try {
       logger.info('Starting Document AI extraction', {
         documentId: options.documentId,
-        supplierId: options.supplierId,
-        provider: 'docai',
+        provider: this.getName(),
       });
 
       // Download PDF
       const pdfBuffer = await this.downloadPdf(options.pdfUrl);
 
+      // Guard: Check PDF size
+      if (pdfBuffer.length > 10 * 1024 * 1024) {
+        throw new Error(`PDF too large: ${(pdfBuffer.length / 1024 / 1024).toFixed(1)} MB (max 10 MB)`);
+      }
+
       // Construct the processor name
       const name = `projects/${this.projectId}/locations/${this.location}/processors/${this.processorId}`;
 
-      // Process the document
+      // Build process options (ocrConfig not supported for invoice processor)
+      const processOptions: any = {};
+      if (this.processorType === 'general') {
+        processOptions.ocrConfig = {
+          languageHints: ['en'],
+        };
+      }
+
+      // Process the document with fieldMask to reduce response size
       const [result] = await this.client.processDocument({
         name,
         rawDocument: {
           content: pdfBuffer,
           mimeType: 'application/pdf',
         },
+        // Reduce payload: only request entities, text, and tables
+        fieldMask: {
+          paths: ['entities', 'text', 'pages.tables'],
+        },
+        ...(Object.keys(processOptions).length > 0 ? { processOptions } : {}),
       });
 
       const responseTimeMs = Date.now() - startTime;
@@ -160,29 +208,43 @@ export class DocumentAIProvider implements IExtractionProvider {
       // Normalize the response
       const normalized = this.normalizeResponse(result.document);
 
+      // Validate with Zod
+      const validated = normalizedExtractionSchema.parse(normalized);
+
       // Calculate accuracy metrics
-      const metrics = calculateAccuracyMetrics(normalized, responseTimeMs);
+      const metrics = calculateAccuracyMetrics(validated, responseTimeMs);
 
       logger.info('Document AI extraction completed', {
         documentId: options.documentId,
-        provider: 'docai',
+        provider: this.getName(),
         responseTimeMs,
-        lineItemsCount: normalized.line_items?.length || 0,
+        lineItemsCount: validated.line_items.length,
       });
+
+      // Build compact raw response (trim to essentials)
+      const tablesCSV = (result.document.pages || []).flatMap((page: any) =>
+        (page.tables || []).map((table: any) => {
+          // Simple CSV representation of table rows
+          return (table.headerRows || []).concat(table.bodyRows || [])
+            .map((row: any) => (row.cells || []).map((cell: any) => cell.layout?.textAnchor?.content || '').join(','))
+            .join('\n');
+        })
+      );
 
       return {
         raw: {
-          document: result.document,
-          text: result.document.text,
+          text: result.document.text?.substring(0, 2000), // Limit stored text
+          tablesCSV: tablesCSV.slice(0, 5), // Max 5 tables
+          entitiesCount: result.document.entities?.length || 0,
         },
-        normalized,
+        normalized: validated,
         metrics,
       };
     } catch (error) {
       const responseTimeMs = Date.now() - startTime;
       logger.error('Document AI extraction failed', {
         documentId: options.documentId,
-        provider: 'docai',
+        provider: this.getName(),
         error: error instanceof Error ? error.message : String(error),
         responseTimeMs,
       });

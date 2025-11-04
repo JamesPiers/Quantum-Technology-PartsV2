@@ -20,7 +20,7 @@ export const uploadResponseSchema = z.object({
 // Extract API
 export const extractRequestSchema = z.object({
   documentId: z.string().uuid(),
-  provider: z.enum(['docai', 'openai', 'mock']).optional(), // Added 'mock' provider
+  provider: z.enum(['docai', 'docai-invoice', 'openai', 'mock']).optional(),
 });
 
 export const extractResponseSchema = z.object({

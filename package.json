@@ -1,6 +1,6 @@
 {
   "name": "quantum-technology-v2",
-  "version": "1.3.2",
+  "version": "1.3.3",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -10,7 +10,11 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "verify": "node scripts/verify-setup.js",
-    "test:supabase": "node scripts/test-supabase.js"
+    "verify:ai": "node scripts/verify-ai-providers.js",
+    "guide:ai": "node scripts/getting-started-with-ai.js",
+    "test:supabase": "node scripts/test-supabase.js",
+    "compare:single": "node scripts/compare-extraction-providers.js",
+    "compare:batch": "node scripts/batch-compare-providers.js"
   },
   "dependencies": {
     "@google-cloud/documentai": "^8.0.0",

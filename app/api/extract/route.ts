@@ -9,6 +9,8 @@ import { extractRequestSchema } from '@/lib/schemas/api.schema';
 import { extractionService } from '@/lib/services/extraction/extraction.service';
 import { findOrCreateSupplier } from '@/lib/services/supplier.service';
 import { logger } from '@/lib/utils/logger';
+import { normalizedExtractionSchema } from '@/lib/schemas/extraction.schema';
+import { ZodError } from 'zod';
 
 export async function POST(request: NextRequest) {
   try {
@@ -54,15 +56,76 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Run extraction
-    const result = await extractionService.extract(
-      {
-        pdfUrl: urlData.signedUrl,
-        supplierId: document.supplier_id,
-        documentId: document.id,
-      },
-      provider
-    );
+    // Run extraction (providers now validate internally)
+    let result;
+    try {
+      result = await extractionService.extract(
+        {
+          pdfUrl: urlData.signedUrl,
+          supplierId: document.supplier_id,
+          documentId: document.id,
+        },
+        provider
+      );
+    } catch (extractionError) {
+      logger.error('Extraction service failed', {
+        documentId,
+        provider,
+        error: extractionError instanceof Error ? extractionError.message : String(extractionError),
+      });
+
+      // Update document status to error
+      await supabaseAdmin
+        .from('documents')
+        .update({ status: 'error' })
+        .eq('id', documentId);
+
+      // Check if it's a validation error
+      if (extractionError instanceof ZodError) {
+        return NextResponse.json(
+          {
+            error: 'Extraction validation failed',
+            details: extractionError.errors.map(e => `${e.path.join('.')}: ${e.message}`).join('; '),
+          },
+          { status: 400 }
+        );
+      }
+
+      return NextResponse.json(
+        { error: 'Extraction failed', message: extractionError instanceof Error ? extractionError.message : String(extractionError) },
+        { status: 500 }
+      );
+    }
+
+    // Double-check validation (defensive)
+    try {
+      normalizedExtractionSchema.parse(result.normalized);
+    } catch (validationError) {
+      logger.error('Post-extraction validation failed', {
+        documentId,
+        error: validationError instanceof Error ? validationError.message : String(validationError),
+      });
+      
+      await supabaseAdmin
+        .from('documents')
+        .update({ status: 'error' })
+        .eq('id', documentId);
+
+      if (validationError instanceof ZodError) {
+        return NextResponse.json(
+          {
+            error: 'Extracted data validation failed',
+            details: validationError.errors.map(e => `${e.path.join('.')}: ${e.message}`).join('; '),
+          },
+          { status: 400 }
+        );
+      }
+
+      return NextResponse.json(
+        { error: 'Invalid extraction data' },
+        { status: 500 }
+      );
+    }
 
     // Find or create supplier based on extracted supplier name
     let supplierId = document.supplier_id;
@@ -144,15 +207,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       extractionId: extraction.id,
       status: 'pending_review',
+      data: result.normalized,
     });
   } catch (error) {
     logger.error('Extract API error', {
       error: error instanceof Error ? error.message : String(error),
     });
 
-    if (error instanceof Error && error.name === 'ZodError') {
+    if (error instanceof ZodError) {
       return NextResponse.json(
-        { error: 'Invalid request data', details: error },
+        {
+          error: 'Invalid request data',
+          details: error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join('; '),
+        },
         { status: 400 }
       );
     }

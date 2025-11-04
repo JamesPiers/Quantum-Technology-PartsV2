@@ -213,6 +213,40 @@ Run tests in watch mode:
 npm run test:watch
 ```
 
+### AI Provider Testing & Comparison
+
+The system includes comprehensive tools for testing and comparing AI extraction providers with real PDFs.
+
+**Quick Start (5 minutes):**
+```bash
+# 1. Verify AI providers are configured
+npm run verify:ai
+
+# 2. Compare both providers on a single PDF
+npm run compare:single -- path/to/your-quote.pdf
+
+# 3. Test multiple PDFs and get aggregate statistics
+npm run compare:batch -- path/to/pdfs/directory
+```
+
+**What you'll get:**
+- Side-by-side comparison of extraction results
+- Performance metrics (speed, accuracy, completeness)
+- Cost estimates for each provider
+- Recommendation on which provider to use
+
+**Documentation:**
+- 📘 [Quick Start Guide](./AI_PROVIDERS_QUICKSTART.md) - Get testing in 5 minutes
+- 📗 [Comprehensive Comparison Guide](./PROVIDER_COMPARISON_GUIDE.md) - Detailed methodology and analysis
+- 📕 [What's New](./WHATS_NEW.md) - Feature overview and migration guide
+
+**Web UI Testing:**
+The upload page now includes provider selection:
+1. Start dev server: `npm run dev`
+2. Go to http://localhost:3000/upload
+3. Choose provider (Mock, OpenAI, or Document AI)
+4. Upload PDF and review results
+
 ## Deployment
 
 ### Vercel

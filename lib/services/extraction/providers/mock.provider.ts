@@ -2,7 +2,7 @@
  * Mock extraction provider for testing and development
  */
 
-import { ExtractionResult, NormalizedExtraction } from '@/lib/schemas/extraction.schema';
+import { ExtractionResult, NormalizedExtraction, normalizedExtractionSchema } from '@/lib/schemas/extraction.schema';
 import { IExtractionProvider, ExtractionOptions } from '../types';
 import { logger } from '@/lib/utils/logger';
 import { calculateAccuracyMetrics } from '@/lib/utils/metrics';
@@ -72,14 +72,17 @@ export class MockProvider implements IExtractionProvider {
       ],
     };
 
+    // Validate mock data with schema (defensive check)
+    const validated = normalizedExtractionSchema.parse(normalized);
+
     const responseTimeMs = Date.now() - startTime;
-    const metrics = calculateAccuracyMetrics(normalized, responseTimeMs);
+    const metrics = calculateAccuracyMetrics(validated, responseTimeMs);
 
     logger.info('Mock extraction completed', {
       documentId: options.documentId,
       provider: 'mock',
       responseTimeMs,
-      lineItemsCount: normalized.line_items.length,
+      lineItemsCount: validated.line_items.length,
     });
 
     return {
@@ -87,7 +90,7 @@ export class MockProvider implements IExtractionProvider {
         mock: true,
         message: 'This is mock data for testing',
       },
-      normalized,
+      normalized: validated,
       metrics,
     };
   }
