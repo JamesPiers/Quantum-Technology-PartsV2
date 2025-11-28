@@ -3,7 +3,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Part } from '@/lib/types/database.types'
+import { Part, PartWithDetails } from '@/lib/types/database.types'
 
 export function useParts(search?: string) {
   return useQuery({
@@ -25,7 +25,7 @@ export function usePart(id: string) {
     queryFn: async () => {
       const response = await fetch(`/api/parts/${id}`)
       if (!response.ok) throw new Error('Failed to fetch part')
-      return response.json() as Promise<Part>
+      return response.json() as Promise<PartWithDetails>
     },
     enabled: !!id,
   })
@@ -70,19 +70,26 @@ export function useUpdatePart(id: string) {
   })
 }
 
-export function useDeletePart(id: string) {
+export function useDeletePart(id?: string) {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async () => {
-      const response = await fetch(`/api/parts/${id}`, {
+    mutationFn: async (targetId?: string) => {
+      const finalId = targetId || id
+      if (!finalId) throw new Error('No part ID provided')
+      
+      const response = await fetch(`/api/parts/${finalId}`, {
         method: 'DELETE',
       })
       if (!response.ok) throw new Error('Failed to delete part')
       return response.json()
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['parts'] })
+      const deletedId = variables || id
+      if (deletedId) {
+        queryClient.invalidateQueries({ queryKey: ['part', deletedId] })
+      }
     },
   })
 }

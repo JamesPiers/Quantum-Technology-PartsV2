@@ -14,17 +14,55 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const { data, error } = await supabaseAdmin
+    // Fetch part details
+    const { data: part, error: partError } = await supabaseAdmin
       .from('parts')
       .select('*')
       .eq('id', params.id)
       .single();
 
-    if (error || !data) {
+    if (partError || !part) {
       return NextResponse.json({ error: 'Part not found' }, { status: 404 });
     }
 
-    return NextResponse.json(data);
+    // Fetch all prices with related data (supplier, document, extraction)
+    const { data: prices, error: pricesError } = await supabaseAdmin
+      .from('part_prices')
+      .select(`
+        *,
+        supplier:suppliers(*),
+        document:documents(*),
+        extraction:extractions(*)
+      `)
+      .eq('part_id', params.id)
+      .order('created_at', { ascending: false });
+
+    if (pricesError) {
+      logger.error('Failed to fetch part prices', {
+        partId: params.id,
+        error: pricesError.message,
+      });
+      // Continue without prices rather than failing
+    }
+
+    // Determine current (most recent valid) price
+    const now = new Date().toISOString().split('T')[0];
+    const currentPrice = prices?.find((price) => {
+      const validFrom = price.valid_from;
+      const validThrough = price.valid_through;
+      return (
+        validFrom <= now &&
+        (validThrough === null || validThrough >= now)
+      );
+    }) || prices?.[0]; // Fall back to most recent if no valid price found
+
+    const result = {
+      ...part,
+      prices: prices || [],
+      current_price: currentPrice,
+    };
+
+    return NextResponse.json(result);
   } catch (error) {
     logger.error('Part GET API error', {
       partId: params.id,

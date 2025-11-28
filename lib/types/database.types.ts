@@ -19,6 +19,8 @@ export interface Part {
   attributes: Record<string, any>;
   drawing_url: string | null;
   created_at: string;
+  // Included by API for list view
+  current_price?: PartPrice;
 }
 
 export interface PartPrice {
@@ -31,7 +33,20 @@ export interface PartPrice {
   lead_time_days: number | null;
   valid_from: string;
   valid_through: string | null;
+  document_id: string | null;
+  extraction_id: string | null;
   created_at: string;
+}
+
+export interface PartPriceWithRelations extends PartPrice {
+  supplier?: Supplier;
+  document?: Document;
+  extraction?: Extraction;
+}
+
+export interface PartWithDetails extends Part {
+  prices: PartPriceWithRelations[];
+  current_price?: PartPriceWithRelations;
 }
 
 export interface Document {

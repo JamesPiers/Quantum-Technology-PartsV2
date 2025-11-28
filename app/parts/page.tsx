@@ -2,11 +2,17 @@
 
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Dialog,
+  DialogContent,
+} from '@/components/ui/dialog'
 import {
   Table,
   TableBody,
@@ -26,14 +32,20 @@ import {
   ArrowUp,
   ArrowDown,
   Filter,
-  X
+  X,
+  Trash2
 } from 'lucide-react'
 import { Part } from '@/lib/types/database.types'
+import { usePart, useDeletePart } from '@/lib/hooks/use-parts'
+import { PartDetailContent } from '@/components/part-detail-content'
+import { useToast } from '@/components/ui/use-toast'
 
 type SortField = 'sku' | 'supplier_part_number' | 'name' | 'created_at'
 type SortOrder = 'asc' | 'desc'
 
 export default function PartsPage() {
+  const router = useRouter()
+  const { toast } = useToast()
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [page, setPage] = useState(0)
@@ -42,10 +54,39 @@ export default function PartsPage() {
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const [showFilters, setShowFilters] = useState(false)
   
+  // Modal state
+  const [selectedPartId, setSelectedPartId] = useState<string | null>(null)
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  
+  // Selection state
+  const [selectedPartIds, setSelectedPartIds] = useState<string[]>([])
+
   // Additional filters
   const [skuFilter, setSkuFilter] = useState('')
   const [nameFilter, setNameFilter] = useState('')
   const [partNumberFilter, setPartNumberFilter] = useState('')
+  
+  // Fetch selected part details for modal
+  const { data: selectedPart, isLoading: isLoadingPart } = usePart(selectedPartId || '')
+  
+  // Delete mutation
+  const { mutateAsync: deletePart } = useDeletePart()
+
+  // Handle part click
+  const handlePartClick = (partId: string) => {
+    setSelectedPartId(partId)
+    setIsModalOpen(true)
+    // Update URL without navigation
+    window.history.pushState({}, '', `/parts?selected=${partId}`)
+  }
+  
+  // Handle modal close
+  const handleCloseModal = () => {
+    setIsModalOpen(false)
+    setSelectedPartId(null)
+    // Reset URL
+    window.history.pushState({}, '', '/parts')
+  }
 
   // Debounce search
   useEffect(() => {
@@ -57,7 +98,7 @@ export default function PartsPage() {
   }, [search])
 
   // Fetch parts
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch } = useQuery({
     queryKey: ['parts', debouncedSearch, page, pageSize, sortField, sortOrder],
     queryFn: async () => {
       const params = new URLSearchParams()
@@ -75,6 +116,52 @@ export default function PartsPage() {
   const totalCount = data?.count || 0
   const totalPages = Math.ceil(totalCount / pageSize)
 
+  // Reset selection when parts change (e.g. page change)
+  useEffect(() => {
+    setSelectedPartIds([])
+  }, [page, pageSize, debouncedSearch, sortField, sortOrder])
+
+  // Selection Handlers
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedPartIds(parts.map((p: Part) => p.id))
+    } else {
+      setSelectedPartIds([])
+    }
+  }
+
+  const handleSelectOne = (id: string, checked: boolean) => {
+    if (checked) {
+      setSelectedPartIds(prev => [...prev, id])
+    } else {
+      setSelectedPartIds(prev => prev.filter(pid => pid !== id))
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    if (!confirm(`Are you sure you want to delete ${selectedPartIds.length} parts?`)) return
+    
+    const toDelete = [...selectedPartIds]
+    
+    try {
+      await Promise.all(toDelete.map(id => deletePart(id)))
+      
+      toast({
+        title: "Parts deleted",
+        description: `Successfully deleted ${toDelete.length} parts.`,
+      })
+      
+      setSelectedPartIds([])
+      refetch()
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to delete some parts.",
+        variant: "destructive"
+      })
+    }
+  }
+
   // Client-side filtering for additional filters
   const filteredParts = parts.filter((part: Part) => {
     if (skuFilter && !part.sku.toLowerCase().includes(skuFilter.toLowerCase())) {
@@ -90,9 +177,9 @@ export default function PartsPage() {
   })
 
   // Client-side sorting
-  const sortedParts = [...filteredParts].sort((a, b) => {
-    const aVal = a[sortField]
-    const bVal = b[sortField]
+  const sortedParts = [...filteredParts].sort((a: Part, b: Part) => {
+    const aVal = a[sortField as keyof Part]
+    const bVal = b[sortField as keyof Part]
     
     if (aVal === null || aVal === undefined) return 1
     if (bVal === null || bVal === undefined) return -1
@@ -133,11 +220,29 @@ export default function PartsPage() {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="max-w-7xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold mb-2">Parts Catalog</h1>
-          <p className="text-muted-foreground">
-            Browse and search your parts inventory
-          </p>
+        <div className="mb-6 flex justify-between items-start">
+          <div>
+            <h1 className="text-3xl font-bold mb-2">Parts Catalog</h1>
+            <p className="text-muted-foreground">
+              Browse and search your parts inventory
+            </p>
+          </div>
+          {selectedPartIds.length > 0 && (
+            <div className="flex items-center gap-2 bg-muted p-2 rounded-lg animate-in fade-in slide-in-from-top-2">
+              <span className="text-sm font-medium px-2">
+                {selectedPartIds.length} selected
+              </span>
+              <Button 
+                variant="destructive" 
+                size="sm" 
+                onClick={handleBulkDelete}
+                className="flex items-center gap-2"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete Selected
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Search and Filters */}
@@ -227,6 +332,13 @@ export default function PartsPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-[50px]">
+                        <Checkbox 
+                          checked={selectedPartIds.length === parts.length && parts.length > 0}
+                          onCheckedChange={(checked) => handleSelectAll(!!checked)}
+                          aria-label="Select all"
+                        />
+                      </TableHead>
                       <TableHead>
                         <button
                           className="flex items-center font-medium hover:text-foreground"
@@ -254,6 +366,7 @@ export default function PartsPage() {
                           {getSortIcon('name')}
                         </button>
                       </TableHead>
+                      <TableHead>Price</TableHead>
                       <TableHead className="max-w-md">Description</TableHead>
                       <TableHead>Attributes</TableHead>
                       <TableHead>
@@ -269,10 +382,34 @@ export default function PartsPage() {
                   </TableHeader>
                   <TableBody>
                     {sortedParts.map((part: Part) => (
-                      <TableRow key={part.id}>
+                      <TableRow 
+                        key={part.id}
+                        className="cursor-pointer hover:bg-muted/50 transition-colors"
+                        onClick={() => handlePartClick(part.id)}
+                        data-state={selectedPartIds.includes(part.id) ? "selected" : undefined}
+                      >
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <Checkbox 
+                            checked={selectedPartIds.includes(part.id)}
+                            onCheckedChange={(checked) => handleSelectOne(part.id, !!checked)}
+                            aria-label={`Select part ${part.sku}`}
+                          />
+                        </TableCell>
                         <TableCell className="font-medium">{part.sku}</TableCell>
                         <TableCell>{part.supplier_part_number}</TableCell>
                         <TableCell>{part.name}</TableCell>
+                        <TableCell>
+                          {part.current_price ? (
+                            <span className="font-medium">
+                              {part.current_price.unit_price.toLocaleString(undefined, {
+                                style: 'currency',
+                                currency: part.current_price.currency
+                              })}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">-</span>
+                          )}
+                        </TableCell>
                         <TableCell className="max-w-md">
                           <div className="truncate" title={part.description || ''}>
                             {part.description || '-'}
@@ -368,8 +505,24 @@ export default function PartsPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Part Detail Modal */}
+        <Dialog open={isModalOpen} onOpenChange={handleCloseModal}>
+          <DialogContent className="max-w-[95vw] max-h-[95vh] overflow-y-auto">
+            {isLoadingPart ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin" />
+              </div>
+            ) : selectedPart ? (
+              <PartDetailContent part={selectedPart} />
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                Part not found
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   )
 }
-

@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabaseAdmin
       .from('parts')
-      .select('*', { count: 'exact' })
+      .select('*, part_prices(*)', { count: 'exact' })
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
@@ -38,8 +38,31 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Process parts to include current_price
+    const now = new Date().toISOString().split('T')[0];
+    const partsWithPrices = data.map((part: any) => {
+      const prices = part.part_prices || [];
+      // Sort prices by created_at desc to get most recent first
+      prices.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      
+      const currentPrice = prices.find((price: any) => {
+        const validFrom = price.valid_from;
+        const validThrough = price.valid_through;
+        return (
+          validFrom <= now &&
+          (validThrough === null || validThrough >= now)
+        );
+      }) || prices[0]; // Fall back to most recent
+
+      return {
+        ...part,
+        prices,
+        current_price: currentPrice
+      };
+    });
+
     return NextResponse.json({
-      data,
+      data: partsWithPrices,
       count,
       limit,
       offset,

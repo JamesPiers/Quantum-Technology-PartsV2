@@ -94,6 +94,8 @@ export async function POST(
             lead_time_days: item.lead_time_days,
             valid_from: validFrom,
             valid_through: validThrough,
+            document_id: extraction.document_id,
+            extraction_id: extractionId,
           });
 
         if (priceError) {
