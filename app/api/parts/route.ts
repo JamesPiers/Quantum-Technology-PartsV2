@@ -83,23 +83,57 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const validated = createPartSchema.parse(body);
 
-    const { data, error } = await supabaseAdmin
+    const { initial_price, document_id, ...partData } = validated;
+
+    // 1. Create Part
+    const { data: part, error: partError } = await supabaseAdmin
       .from('parts')
-      .insert(validated)
+      .insert(partData)
       .select()
       .single();
 
-    if (error) {
-      logger.error('Failed to create part', { error: error.message });
+    if (partError) {
+      logger.error('Failed to create part', { error: partError.message });
       return NextResponse.json(
         { error: 'Failed to create part' },
         { status: 500 }
       );
     }
 
-    logger.info('Part created', { partId: data.id, sku: data.sku });
+    // 2. Create Price (if provided)
+    if (initial_price) {
+      const { error: priceError } = await supabaseAdmin
+        .from('part_prices')
+        .insert({
+          part_id: part.id,
+          supplier_id: initial_price.supplier_id,
+          unit_price: initial_price.unit_price,
+          currency: initial_price.currency,
+          document_id: document_id || null,
+          valid_from: new Date().toISOString(),
+        });
 
-    return NextResponse.json(data, { status: 201 });
+      if (priceError) {
+        logger.error('Failed to create part price', { error: priceError.message, partId: part.id });
+        // Warning: Part was created but price failed
+      }
+    }
+
+    // 3. Update Document (if provided and we have supplier info)
+    if (document_id && initial_price?.supplier_id) {
+       const { error: docError } = await supabaseAdmin
+        .from('documents')
+        .update({ supplier_id: initial_price.supplier_id })
+        .eq('id', document_id);
+        
+       if (docError) {
+         logger.warn('Failed to update document supplier', { error: docError.message, documentId: document_id });
+       }
+    }
+
+    logger.info('Part created', { partId: part.id, sku: part.sku });
+
+    return NextResponse.json(part, { status: 201 });
   } catch (error) {
     logger.error('Parts POST API error', {
       error: error instanceof Error ? error.message : String(error),
@@ -118,4 +152,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

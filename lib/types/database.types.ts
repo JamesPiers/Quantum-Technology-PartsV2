@@ -16,6 +16,8 @@ export interface Part {
   supplier_part_number: string;
   name: string;
   description: string | null;
+  catalog_code: string | null;
+  sub_catalog_code: string | null;
   attributes: Record<string, any>;
   drawing_url: string | null;
   created_at: string;

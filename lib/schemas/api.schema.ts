@@ -44,9 +44,18 @@ export const createPartSchema = z.object({
   sku: z.string().min(1),
   supplier_part_number: z.string().min(1),
   name: z.string().min(1),
-  description: z.string().optional(),
-  attributes: z.record(z.any()).optional(),
-  drawing_url: z.string().url().optional(),
+  description: z.string().nullable().optional(),
+  catalog_code: z.string().nullable().optional(),
+  sub_catalog_code: z.string().nullable().optional(),
+  attributes: z.record(z.any()).nullable().optional(),
+  drawing_url: z.string().url().nullable().optional(),
+  // Optional initial price/document details
+  initial_price: z.object({
+    unit_price: z.number().nonnegative(),
+    currency: z.string(),
+    supplier_id: z.string().uuid(),
+  }).optional(),
+  document_id: z.string().uuid().nullable().optional(),
 });
 
 export const updatePartSchema = createPartSchema.partial();

@@ -1,6 +1,7 @@
 'use client'
 
 import { PartWithDetails, PartPriceWithRelations } from '@/lib/types/database.types'
+import { getCatalogByCode, getSubCatalogByCode } from '@/lib/utils/catalog-utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -26,6 +27,11 @@ interface PartDetailContentProps {
 }
 
 export function PartDetailContent({ part }: PartDetailContentProps) {
+  const catalog = part.catalog_code ? getCatalogByCode(part.catalog_code) : null
+  const subCatalog = (part.catalog_code && part.sub_catalog_code) 
+    ? getSubCatalogByCode(part.catalog_code, part.sub_catalog_code) 
+    : null
+
   const formatCurrency = (amount: number, currency: string) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -105,6 +111,24 @@ export function PartDetailContent({ part }: PartDetailContentProps) {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {catalog && (
+                <div>
+                  <div className="text-sm font-medium text-muted-foreground mb-2">
+                    Classification
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <div className="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-primary/10 text-primary hover:bg-primary/20">
+                      {catalog.name} ({catalog.code})
+                    </div>
+                    {subCatalog && (
+                      <div className="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80">
+                        {subCatalog.name} ({subCatalog.code})
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {part.description && (
                 <div>
                   <div className="text-sm font-medium text-muted-foreground mb-1">

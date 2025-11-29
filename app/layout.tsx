@@ -36,7 +36,7 @@ export default function RootLayout({
             <main className="flex-1">{children}</main>
             <footer className="border-t py-4 mt-8">
               <div className="container mx-auto px-4 text-center">
-                <p className="text-sm text-gray-400">v1.3.5</p>
+                <p className="text-sm text-gray-400">v1.3.8</p>
               </div>
             </footer>
           </div>

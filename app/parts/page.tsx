@@ -1,12 +1,13 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -33,12 +34,16 @@ import {
   ArrowDown,
   Filter,
   X,
-  Trash2
+  Trash2,
+  Plus,
+  GripVertical
 } from 'lucide-react'
 import { Part } from '@/lib/types/database.types'
 import { usePart, useDeletePart } from '@/lib/hooks/use-parts'
 import { PartDetailContent } from '@/components/part-detail-content'
 import { useToast } from '@/components/ui/use-toast'
+import { AddPartDialog } from '@/components/add-part-dialog'
+import { PART_CATALOGS } from '@/lib/constants/part-catalogs'
 
 type SortField = 'sku' | 'supplier_part_number' | 'name' | 'created_at'
 type SortOrder = 'asc' | 'desc'
@@ -57,6 +62,7 @@ export default function PartsPage() {
   // Modal state
   const [selectedPartId, setSelectedPartId] = useState<string | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   
   // Selection state
   const [selectedPartIds, setSelectedPartIds] = useState<string[]>([])
@@ -66,6 +72,23 @@ export default function PartsPage() {
   const [nameFilter, setNameFilter] = useState('')
   const [partNumberFilter, setPartNumberFilter] = useState('')
   
+  // Column resizing
+  const [colWidths, setColWidths] = useState<Record<string, number>>({
+    select: 48,
+    sku: 120,
+    partNumber: 140,
+    name: 200,
+    price: 100,
+    catalog: 150,
+    subCatalog: 150,
+    detail1: 120,
+    detail2: 120,
+    detail3: 120,
+    detail4: 120,
+    created: 110,
+  })
+  const resizingRef = useRef<{ col: string, startX: number, startWidth: number } | null>(null)
+
   // Fetch selected part details for modal
   const { data: selectedPart, isLoading: isLoadingPart } = usePart(selectedPartId || '')
   
@@ -217,6 +240,80 @@ export default function PartsPage() {
 
   const hasActiveFilters = search || skuFilter || nameFilter || partNumberFilter
 
+  const getCatalogName = (code: string | null | undefined) => {
+    if (!code) return '-'
+    const catalog = PART_CATALOGS.find(c => c.code === code)
+    return catalog ? catalog.name : code
+  }
+
+  const getSubCatalogName = (catalogCode: string | null | undefined, subCode: string | null | undefined) => {
+    if (!catalogCode || !subCode) return '-'
+    const catalog = PART_CATALOGS.find(c => c.code === catalogCode)
+    if (!catalog) return subCode
+    const sub = catalog.subCatalogs.find(s => s.code === subCode)
+    return sub ? sub.name : subCode
+  }
+
+  const getDetailValue = (part: Part, index: number) => {
+    if (!part.catalog_code || !part.attributes) return '-'
+    const catalog = PART_CATALOGS.find(c => c.code === part.catalog_code)
+    if (!catalog || !catalog.details || catalog.details.length <= index) return '-'
+    
+    const key = catalog.details[index]
+    const val = part.attributes[key]
+    return val !== undefined && val !== null ? String(val) : '-'
+  }
+
+  // Resizing Handlers
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizingRef.current) return
+      const { col, startX, startWidth } = resizingRef.current
+      const diff = e.clientX - startX
+      const newWidth = Math.max(50, startWidth + diff)
+      setColWidths(prev => ({ ...prev, [col]: newWidth }))
+    }
+
+    const handleMouseUp = () => {
+      if (resizingRef.current) {
+        resizingRef.current = null
+        document.body.style.cursor = 'default'
+        document.body.style.userSelect = 'auto'
+      }
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [])
+
+  const startResize = (e: React.MouseEvent, col: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    resizingRef.current = {
+      col,
+      startX: e.clientX,
+      startWidth: colWidths[col] || 100
+    }
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+  }
+
+  const ResizeHandle = ({ col }: { col: string }) => (
+    <div
+      className="absolute right-0 top-0 bottom-0 w-4 cursor-col-resize hover:bg-primary/10 flex items-center justify-center group"
+      onMouseDown={(e) => startResize(e, col)}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="w-[1px] h-4 bg-border group-hover:bg-primary/50" />
+    </div>
+  )
+
+  const totalWidth = Object.values(colWidths).reduce((a, b) => a + b, 0)
+
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="max-w-7xl mx-auto">
@@ -227,22 +324,32 @@ export default function PartsPage() {
               Browse and search your parts inventory
             </p>
           </div>
-          {selectedPartIds.length > 0 && (
-            <div className="flex items-center gap-2 bg-muted p-2 rounded-lg animate-in fade-in slide-in-from-top-2">
-              <span className="text-sm font-medium px-2">
-                {selectedPartIds.length} selected
-              </span>
-              <Button 
-                variant="destructive" 
-                size="sm" 
-                onClick={handleBulkDelete}
-                className="flex items-center gap-2"
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete Selected
-              </Button>
-            </div>
-          )}
+          
+          <div className="flex items-center gap-2">
+            {selectedPartIds.length > 0 && (
+              <div className="flex items-center gap-2 bg-muted p-2 rounded-lg animate-in fade-in slide-in-from-top-2">
+                <span className="text-sm font-medium px-2">
+                  {selectedPartIds.length} selected
+                </span>
+                <Button 
+                  variant="destructive" 
+                  size="sm" 
+                  onClick={handleBulkDelete}
+                  className="flex items-center gap-2"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete Selected
+                </Button>
+              </div>
+            )}
+            <Button 
+              onClick={() => setIsAddDialogOpen(true)} 
+              className="flex items-center gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              Add New Part
+            </Button>
+          </div>
         </div>
 
         {/* Search and Filters */}
@@ -329,112 +436,132 @@ export default function PartsPage() {
               </div>
             ) : (
               <>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[50px]">
-                        <Checkbox 
-                          checked={selectedPartIds.length === parts.length && parts.length > 0}
-                          onCheckedChange={(checked) => handleSelectAll(!!checked)}
-                          aria-label="Select all"
-                        />
-                      </TableHead>
-                      <TableHead>
-                        <button
-                          className="flex items-center font-medium hover:text-foreground"
-                          onClick={() => handleSort('sku')}
-                        >
-                          SKU
-                          {getSortIcon('sku')}
-                        </button>
-                      </TableHead>
-                      <TableHead>
-                        <button
-                          className="flex items-center font-medium hover:text-foreground"
-                          onClick={() => handleSort('supplier_part_number')}
-                        >
-                          Part Number
-                          {getSortIcon('supplier_part_number')}
-                        </button>
-                      </TableHead>
-                      <TableHead>
-                        <button
-                          className="flex items-center font-medium hover:text-foreground"
-                          onClick={() => handleSort('name')}
-                        >
-                          Name
-                          {getSortIcon('name')}
-                        </button>
-                      </TableHead>
-                      <TableHead>Price</TableHead>
-                      <TableHead className="max-w-md">Description</TableHead>
-                      <TableHead>Attributes</TableHead>
-                      <TableHead>
-                        <button
-                          className="flex items-center font-medium hover:text-foreground"
-                          onClick={() => handleSort('created_at')}
-                        >
-                          Created
-                          {getSortIcon('created_at')}
-                        </button>
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {sortedParts.map((part: Part) => (
-                      <TableRow 
-                        key={part.id}
-                        className="cursor-pointer hover:bg-muted/50 transition-colors"
-                        onClick={() => handlePartClick(part.id)}
-                        data-state={selectedPartIds.includes(part.id) ? "selected" : undefined}
-                      >
-                        <TableCell onClick={(e) => e.stopPropagation()}>
+                <div className="overflow-auto border rounded-md">
+                  <Table style={{ width: Math.max(totalWidth, 1000), minWidth: '100%', tableLayout: 'fixed' }}>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead style={{ width: colWidths.select }} className="relative">
                           <Checkbox 
-                            checked={selectedPartIds.includes(part.id)}
-                            onCheckedChange={(checked) => handleSelectOne(part.id, !!checked)}
-                            aria-label={`Select part ${part.sku}`}
+                            checked={selectedPartIds.length === parts.length && parts.length > 0}
+                            onCheckedChange={(checked) => handleSelectAll(!!checked)}
+                            aria-label="Select all"
                           />
-                        </TableCell>
-                        <TableCell className="font-medium">{part.sku}</TableCell>
-                        <TableCell>{part.supplier_part_number}</TableCell>
-                        <TableCell>{part.name}</TableCell>
-                        <TableCell>
-                          {part.current_price ? (
-                            <span className="font-medium">
-                              {part.current_price.unit_price.toLocaleString(undefined, {
-                                style: 'currency',
-                                currency: part.current_price.currency
-                              })}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground text-sm">-</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="max-w-md">
-                          <div className="truncate" title={part.description || ''}>
-                            {part.description || '-'}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {part.attributes && Object.keys(part.attributes).length > 0 ? (
-                            <div className="text-xs max-w-xs truncate" title={JSON.stringify(part.attributes)}>
-                              {Object.entries(part.attributes).map(([key, value]) => (
-                                <span key={key} className="inline-block mr-2">
-                                  {key}: {String(value)}
-                                </span>
-                              ))}
-                            </div>
-                          ) : (
-                            '-'
-                          )}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {new Date(part.created_at).toLocaleDateString()}
-                        </TableCell>
+                          <ResizeHandle col="select" />
+                        </TableHead>
+                        <TableHead style={{ width: colWidths.sku }} className="relative">
+                          <button
+                            className="flex items-center font-medium hover:text-foreground w-full"
+                            onClick={() => handleSort('sku')}
+                          >
+                            SKU
+                            {getSortIcon('sku')}
+                          </button>
+                          <ResizeHandle col="sku" />
+                        </TableHead>
+                        <TableHead style={{ width: colWidths.partNumber }} className="relative">
+                          <button
+                            className="flex items-center font-medium hover:text-foreground w-full"
+                            onClick={() => handleSort('supplier_part_number')}
+                          >
+                            Part Number
+                            {getSortIcon('supplier_part_number')}
+                          </button>
+                          <ResizeHandle col="partNumber" />
+                        </TableHead>
+                        <TableHead style={{ width: colWidths.name }} className="relative">
+                          <button
+                            className="flex items-center font-medium hover:text-foreground w-full"
+                            onClick={() => handleSort('name')}
+                          >
+                            Name
+                            {getSortIcon('name')}
+                          </button>
+                          <ResizeHandle col="name" />
+                        </TableHead>
+                        <TableHead style={{ width: colWidths.price }} className="relative">
+                          Price
+                          <ResizeHandle col="price" />
+                        </TableHead>
+                        <TableHead style={{ width: colWidths.catalog }} className="relative">
+                          Catalog
+                          <ResizeHandle col="catalog" />
+                        </TableHead>
+                        <TableHead style={{ width: colWidths.subCatalog }} className="relative">
+                          Sub-Catalog
+                          <ResizeHandle col="subCatalog" />
+                        </TableHead>
+                        <TableHead style={{ width: colWidths.detail1 }} className="relative">
+                          Detail 1
+                          <ResizeHandle col="detail1" />
+                        </TableHead>
+                        <TableHead style={{ width: colWidths.detail2 }} className="relative">
+                          Detail 2
+                          <ResizeHandle col="detail2" />
+                        </TableHead>
+                        <TableHead style={{ width: colWidths.detail3 }} className="relative">
+                          Detail 3
+                          <ResizeHandle col="detail3" />
+                        </TableHead>
+                        <TableHead style={{ width: colWidths.detail4 }} className="relative">
+                          Detail 4
+                          <ResizeHandle col="detail4" />
+                        </TableHead>
+                        <TableHead style={{ width: colWidths.created }} className="relative">
+                          <button
+                            className="flex items-center font-medium hover:text-foreground w-full"
+                            onClick={() => handleSort('created_at')}
+                          >
+                            Created
+                            {getSortIcon('created_at')}
+                          </button>
+                          <ResizeHandle col="created" />
+                        </TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {sortedParts.map((part: Part) => (
+                        <TableRow 
+                          key={part.id}
+                          className="cursor-pointer hover:bg-muted/50 transition-colors"
+                          onClick={() => handlePartClick(part.id)}
+                          data-state={selectedPartIds.includes(part.id) ? "selected" : undefined}
+                        >
+                          <TableCell style={{ width: colWidths.select }} onClick={(e) => e.stopPropagation()}>
+                            <Checkbox 
+                              checked={selectedPartIds.includes(part.id)}
+                              onCheckedChange={(checked) => handleSelectOne(part.id, !!checked)}
+                              aria-label={`Select part ${part.sku}`}
+                            />
+                          </TableCell>
+                          <TableCell style={{ width: colWidths.sku }} className="font-medium truncate">{part.sku}</TableCell>
+                          <TableCell style={{ width: colWidths.partNumber }} className="truncate">{part.supplier_part_number}</TableCell>
+                          <TableCell style={{ width: colWidths.name }} className="truncate" title={part.name}>{part.name}</TableCell>
+                          <TableCell style={{ width: colWidths.price }}>
+                            {part.current_price ? (
+                              <span className="font-medium">
+                                {part.current_price.unit_price.toLocaleString(undefined, {
+                                  style: 'currency',
+                                  currency: part.current_price.currency
+                                })}
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground text-sm">-</span>
+                            )}
+                          </TableCell>
+                          <TableCell style={{ width: colWidths.catalog }} className="text-sm truncate" title={getCatalogName(part.catalog_code)}>{getCatalogName(part.catalog_code)}</TableCell>
+                          <TableCell style={{ width: colWidths.subCatalog }} className="text-sm truncate" title={getSubCatalogName(part.catalog_code, part.sub_catalog_code)}>{getSubCatalogName(part.catalog_code, part.sub_catalog_code)}</TableCell>
+                          <TableCell style={{ width: colWidths.detail1 }} className="text-sm truncate" title={getDetailValue(part, 0)}>{getDetailValue(part, 0)}</TableCell>
+                          <TableCell style={{ width: colWidths.detail2 }} className="text-sm truncate" title={getDetailValue(part, 1)}>{getDetailValue(part, 1)}</TableCell>
+                          <TableCell style={{ width: colWidths.detail3 }} className="text-sm truncate" title={getDetailValue(part, 2)}>{getDetailValue(part, 2)}</TableCell>
+                          <TableCell style={{ width: colWidths.detail4 }} className="text-sm truncate" title={getDetailValue(part, 3)}>{getDetailValue(part, 3)}</TableCell>
+                          <TableCell style={{ width: colWidths.created }} className="text-sm text-muted-foreground truncate">
+                            {new Date(part.created_at).toLocaleDateString()}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
 
                 {/* Pagination */}
                 <div className="flex items-center justify-between px-6 py-4 border-t">
@@ -447,18 +574,21 @@ export default function PartsPage() {
                         Per page:
                       </Label>
                       <Select
-                        id="page-size"
                         value={pageSize.toString()}
-                        onChange={(e) => {
-                          setPageSize(Number(e.target.value))
+                        onValueChange={(val) => {
+                          setPageSize(Number(val))
                           setPage(0)
                         }}
-                        className="w-20"
                       >
-                        <option value="10">10</option>
-                        <option value="25">25</option>
-                        <option value="50">50</option>
-                        <option value="100">100</option>
+                        <SelectTrigger id="page-size" className="w-20">
+                          <SelectValue placeholder={pageSize.toString()} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="10">10</SelectItem>
+                          <SelectItem value="25">25</SelectItem>
+                          <SelectItem value="50">50</SelectItem>
+                          <SelectItem value="100">100</SelectItem>
+                        </SelectContent>
                       </Select>
                     </div>
                   </div>
@@ -522,6 +652,13 @@ export default function PartsPage() {
             )}
           </DialogContent>
         </Dialog>
+
+        {/* Add Part Dialog */}
+        <AddPartDialog 
+          open={isAddDialogOpen} 
+          onOpenChange={setIsAddDialogOpen} 
+          onSuccess={() => refetch()} 
+        />
       </div>
     </div>
   )
