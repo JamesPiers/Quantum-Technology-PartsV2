@@ -14,6 +14,8 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search');
     const limit = parseInt(searchParams.get('limit') || '50');
     const offset = parseInt(searchParams.get('offset') || '0');
+    const catalogCode = searchParams.get('catalog_code');
+    const subCatalogCode = searchParams.get('sub_catalog_code');
 
     let query = supabaseAdmin
       .from('parts')
@@ -26,6 +28,15 @@ export async function GET(request: NextRequest) {
       query = query.or(
         `sku.ilike.%${search}%,supplier_part_number.ilike.%${search}%,name.ilike.%${search}%`
       );
+    }
+    
+    // Add catalog filters if provided
+    if (catalogCode) {
+      query = query.eq('catalog_code', catalogCode);
+    }
+    
+    if (subCatalogCode) {
+      query = query.eq('sub_catalog_code', subCatalogCode);
     }
 
     const { data, error, count } = await query;

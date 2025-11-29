@@ -36,7 +36,9 @@ import {
   X,
   Trash2,
   Plus,
-  GripVertical
+  GripVertical,
+  LayoutGrid,
+  List
 } from 'lucide-react'
 import { Part } from '@/lib/types/database.types'
 import { usePart, useDeletePart } from '@/lib/hooks/use-parts'
@@ -44,6 +46,7 @@ import { PartDetailContent } from '@/components/part-detail-content'
 import { useToast } from '@/components/ui/use-toast'
 import { AddPartDialog } from '@/components/add-part-dialog'
 import { PART_CATALOGS } from '@/lib/constants/part-catalogs'
+import { HierarchyView } from '@/components/parts/hierarchy-view'
 
 type SortField = 'sku' | 'supplier_part_number' | 'name' | 'created_at'
 type SortOrder = 'asc' | 'desc'
@@ -58,6 +61,7 @@ export default function PartsPage() {
   const [sortField, setSortField] = useState<SortField>('created_at')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const [showFilters, setShowFilters] = useState(false)
+  const [viewMode, setViewMode] = useState<'table' | 'hierarchy'>('table')
   
   // Modal state
   const [selectedPartId, setSelectedPartId] = useState<string | null>(null)
@@ -352,289 +356,314 @@ export default function PartsPage() {
           </div>
         </div>
 
-        {/* Search and Filters */}
-        <Card className="mb-6">
-          <CardContent className="pt-6">
-            <div className="space-y-4">
-              {/* Main Search */}
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search all fields..."
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    className="pl-9"
-                  />
-                </div>
-                <Button
-                  variant="outline"
-                  onClick={() => setShowFilters(!showFilters)}
-                  className="flex items-center gap-2"
-                >
-                  <Filter className="h-4 w-4" />
-                  Filters
-                </Button>
-                {hasActiveFilters && (
-                  <Button
-                    variant="ghost"
-                    onClick={clearFilters}
-                    className="flex items-center gap-2"
-                  >
-                    <X className="h-4 w-4" />
-                    Clear
-                  </Button>
-                )}
-              </div>
+        <div className="flex items-center space-x-2 mb-6 border-b">
+          <Button
+            variant={viewMode === 'table' ? 'default' : 'ghost'}
+            onClick={() => setViewMode('table')}
+            className="rounded-b-none rounded-t-md"
+          >
+            <List className="mr-2 h-4 w-4" />
+            Table View
+          </Button>
+          <Button
+            variant={viewMode === 'hierarchy' ? 'default' : 'ghost'}
+            onClick={() => setViewMode('hierarchy')}
+            className="rounded-b-none rounded-t-md"
+          >
+            <LayoutGrid className="mr-2 h-4 w-4" />
+            Hierarchy View
+          </Button>
+        </div>
 
-              {/* Advanced Filters */}
-              {showFilters && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t">
-                  <div className="space-y-2">
-                    <Label htmlFor="sku-filter">SKU</Label>
-                    <Input
-                      id="sku-filter"
-                      placeholder="Filter by SKU..."
-                      value={skuFilter}
-                      onChange={(e) => setSkuFilter(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="name-filter">Part Name</Label>
-                    <Input
-                      id="name-filter"
-                      placeholder="Filter by name..."
-                      value={nameFilter}
-                      onChange={(e) => setNameFilter(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="partnum-filter">Part Number</Label>
-                    <Input
-                      id="partnum-filter"
-                      placeholder="Filter by part number..."
-                      value={partNumberFilter}
-                      onChange={(e) => setPartNumberFilter(e.target.value)}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Table */}
-        <Card>
-          <CardContent className="p-0">
-            {isLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-8 w-8 animate-spin" />
-              </div>
-            ) : sortedParts.length === 0 ? (
-              <div className="py-12 text-center text-muted-foreground">
-                No parts found
-              </div>
-            ) : (
-              <>
-                <div className="overflow-auto border rounded-md">
-                  <Table style={{ width: Math.max(totalWidth, 1000), minWidth: '100%', tableLayout: 'fixed' }}>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead style={{ width: colWidths.select }} className="relative">
-                          <Checkbox 
-                            checked={selectedPartIds.length === parts.length && parts.length > 0}
-                            onCheckedChange={(checked) => handleSelectAll(!!checked)}
-                            aria-label="Select all"
-                          />
-                          <ResizeHandle col="select" />
-                        </TableHead>
-                        <TableHead style={{ width: colWidths.sku }} className="relative">
-                          <button
-                            className="flex items-center font-medium hover:text-foreground w-full"
-                            onClick={() => handleSort('sku')}
-                          >
-                            SKU
-                            {getSortIcon('sku')}
-                          </button>
-                          <ResizeHandle col="sku" />
-                        </TableHead>
-                        <TableHead style={{ width: colWidths.partNumber }} className="relative">
-                          <button
-                            className="flex items-center font-medium hover:text-foreground w-full"
-                            onClick={() => handleSort('supplier_part_number')}
-                          >
-                            Part Number
-                            {getSortIcon('supplier_part_number')}
-                          </button>
-                          <ResizeHandle col="partNumber" />
-                        </TableHead>
-                        <TableHead style={{ width: colWidths.name }} className="relative">
-                          <button
-                            className="flex items-center font-medium hover:text-foreground w-full"
-                            onClick={() => handleSort('name')}
-                          >
-                            Name
-                            {getSortIcon('name')}
-                          </button>
-                          <ResizeHandle col="name" />
-                        </TableHead>
-                        <TableHead style={{ width: colWidths.price }} className="relative">
-                          Price
-                          <ResizeHandle col="price" />
-                        </TableHead>
-                        <TableHead style={{ width: colWidths.catalog }} className="relative">
-                          Catalog
-                          <ResizeHandle col="catalog" />
-                        </TableHead>
-                        <TableHead style={{ width: colWidths.subCatalog }} className="relative">
-                          Sub-Catalog
-                          <ResizeHandle col="subCatalog" />
-                        </TableHead>
-                        <TableHead style={{ width: colWidths.detail1 }} className="relative">
-                          Detail 1
-                          <ResizeHandle col="detail1" />
-                        </TableHead>
-                        <TableHead style={{ width: colWidths.detail2 }} className="relative">
-                          Detail 2
-                          <ResizeHandle col="detail2" />
-                        </TableHead>
-                        <TableHead style={{ width: colWidths.detail3 }} className="relative">
-                          Detail 3
-                          <ResizeHandle col="detail3" />
-                        </TableHead>
-                        <TableHead style={{ width: colWidths.detail4 }} className="relative">
-                          Detail 4
-                          <ResizeHandle col="detail4" />
-                        </TableHead>
-                        <TableHead style={{ width: colWidths.created }} className="relative">
-                          <button
-                            className="flex items-center font-medium hover:text-foreground w-full"
-                            onClick={() => handleSort('created_at')}
-                          >
-                            Created
-                            {getSortIcon('created_at')}
-                          </button>
-                          <ResizeHandle col="created" />
-                        </TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {sortedParts.map((part: Part) => (
-                        <TableRow 
-                          key={part.id}
-                          className="cursor-pointer hover:bg-muted/50 transition-colors"
-                          onClick={() => handlePartClick(part.id)}
-                          data-state={selectedPartIds.includes(part.id) ? "selected" : undefined}
-                        >
-                          <TableCell style={{ width: colWidths.select }} onClick={(e) => e.stopPropagation()}>
-                            <Checkbox 
-                              checked={selectedPartIds.includes(part.id)}
-                              onCheckedChange={(checked) => handleSelectOne(part.id, !!checked)}
-                              aria-label={`Select part ${part.sku}`}
-                            />
-                          </TableCell>
-                          <TableCell style={{ width: colWidths.sku }} className="font-medium truncate">{part.sku}</TableCell>
-                          <TableCell style={{ width: colWidths.partNumber }} className="truncate">{part.supplier_part_number}</TableCell>
-                          <TableCell style={{ width: colWidths.name }} className="truncate" title={part.name}>{part.name}</TableCell>
-                          <TableCell style={{ width: colWidths.price }}>
-                            {part.current_price ? (
-                              <span className="font-medium">
-                                {part.current_price.unit_price.toLocaleString(undefined, {
-                                  style: 'currency',
-                                  currency: part.current_price.currency
-                                })}
-                              </span>
-                            ) : (
-                              <span className="text-muted-foreground text-sm">-</span>
-                            )}
-                          </TableCell>
-                          <TableCell style={{ width: colWidths.catalog }} className="text-sm truncate" title={getCatalogName(part.catalog_code)}>{getCatalogName(part.catalog_code)}</TableCell>
-                          <TableCell style={{ width: colWidths.subCatalog }} className="text-sm truncate" title={getSubCatalogName(part.catalog_code, part.sub_catalog_code)}>{getSubCatalogName(part.catalog_code, part.sub_catalog_code)}</TableCell>
-                          <TableCell style={{ width: colWidths.detail1 }} className="text-sm truncate" title={getDetailValue(part, 0)}>{getDetailValue(part, 0)}</TableCell>
-                          <TableCell style={{ width: colWidths.detail2 }} className="text-sm truncate" title={getDetailValue(part, 1)}>{getDetailValue(part, 1)}</TableCell>
-                          <TableCell style={{ width: colWidths.detail3 }} className="text-sm truncate" title={getDetailValue(part, 2)}>{getDetailValue(part, 2)}</TableCell>
-                          <TableCell style={{ width: colWidths.detail4 }} className="text-sm truncate" title={getDetailValue(part, 3)}>{getDetailValue(part, 3)}</TableCell>
-                          <TableCell style={{ width: colWidths.created }} className="text-sm text-muted-foreground truncate">
-                            {new Date(part.created_at).toLocaleDateString()}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-
-                {/* Pagination */}
-                <div className="flex items-center justify-between px-6 py-4 border-t">
-                  <div className="flex items-center gap-4">
-                    <div className="text-sm text-muted-foreground">
-                      Showing {page * pageSize + 1} to {Math.min((page + 1) * pageSize, totalCount)} of {totalCount} parts
+        {viewMode === 'table' ? (
+          <>
+            {/* Search and Filters */}
+            <Card className="mb-6">
+              <CardContent className="pt-6">
+                <div className="space-y-4">
+                  {/* Main Search */}
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search all fields..."
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        className="pl-9"
+                      />
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Label htmlFor="page-size" className="text-sm">
-                        Per page:
-                      </Label>
-                      <Select
-                        value={pageSize.toString()}
-                        onValueChange={(val) => {
-                          setPageSize(Number(val))
-                          setPage(0)
-                        }}
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowFilters(!showFilters)}
+                      className="flex items-center gap-2"
+                    >
+                      <Filter className="h-4 w-4" />
+                      Filters
+                    </Button>
+                    {hasActiveFilters && (
+                      <Button
+                        variant="ghost"
+                        onClick={clearFilters}
+                        className="flex items-center gap-2"
                       >
-                        <SelectTrigger id="page-size" className="w-20">
-                          <SelectValue placeholder={pageSize.toString()} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="10">10</SelectItem>
-                          <SelectItem value="25">25</SelectItem>
-                          <SelectItem value="50">50</SelectItem>
-                          <SelectItem value="100">100</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                        <X className="h-4 w-4" />
+                        Clear
+                      </Button>
+                    )}
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage(0)}
-                      disabled={page === 0}
-                    >
-                      <ChevronsLeft className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage(page - 1)}
-                      disabled={page === 0}
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                    </Button>
-                    <div className="text-sm">
-                      Page {page + 1} of {totalPages}
+                  {/* Advanced Filters */}
+                  {showFilters && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t">
+                      <div className="space-y-2">
+                        <Label htmlFor="sku-filter">SKU</Label>
+                        <Input
+                          id="sku-filter"
+                          placeholder="Filter by SKU..."
+                          value={skuFilter}
+                          onChange={(e) => setSkuFilter(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="name-filter">Part Name</Label>
+                        <Input
+                          id="name-filter"
+                          placeholder="Filter by name..."
+                          value={nameFilter}
+                          onChange={(e) => setNameFilter(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="partnum-filter">Part Number</Label>
+                        <Input
+                          id="partnum-filter"
+                          placeholder="Filter by part number..."
+                          value={partNumberFilter}
+                          onChange={(e) => setPartNumberFilter(e.target.value)}
+                        />
+                      </div>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage(page + 1)}
-                      disabled={page >= totalPages - 1}
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage(totalPages - 1)}
-                      disabled={page >= totalPages - 1}
-                    >
-                      <ChevronsRight className="h-4 w-4" />
-                    </Button>
-                  </div>
+                  )}
                 </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
+
+            {/* Table */}
+            <Card>
+              <CardContent className="p-0">
+                {isLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin" />
+                  </div>
+                ) : sortedParts.length === 0 ? (
+                  <div className="py-12 text-center text-muted-foreground">
+                    No parts found
+                  </div>
+                ) : (
+                  <>
+                    <div className="overflow-auto border rounded-md">
+                      <Table style={{ width: Math.max(totalWidth, 1000), minWidth: '100%', tableLayout: 'fixed' }}>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead style={{ width: colWidths.select }} className="relative">
+                              <Checkbox 
+                                checked={selectedPartIds.length === parts.length && parts.length > 0}
+                                onCheckedChange={(checked) => handleSelectAll(!!checked)}
+                                aria-label="Select all"
+                              />
+                              <ResizeHandle col="select" />
+                            </TableHead>
+                            <TableHead style={{ width: colWidths.sku }} className="relative">
+                              <button
+                                className="flex items-center font-medium hover:text-foreground w-full"
+                                onClick={() => handleSort('sku')}
+                              >
+                                SKU
+                                {getSortIcon('sku')}
+                              </button>
+                              <ResizeHandle col="sku" />
+                            </TableHead>
+                            <TableHead style={{ width: colWidths.partNumber }} className="relative">
+                              <button
+                                className="flex items-center font-medium hover:text-foreground w-full"
+                                onClick={() => handleSort('supplier_part_number')}
+                              >
+                                Part Number
+                                {getSortIcon('supplier_part_number')}
+                              </button>
+                              <ResizeHandle col="partNumber" />
+                            </TableHead>
+                            <TableHead style={{ width: colWidths.name }} className="relative">
+                              <button
+                                className="flex items-center font-medium hover:text-foreground w-full"
+                                onClick={() => handleSort('name')}
+                              >
+                                Name
+                                {getSortIcon('name')}
+                              </button>
+                              <ResizeHandle col="name" />
+                            </TableHead>
+                            <TableHead style={{ width: colWidths.price }} className="relative">
+                              Price
+                              <ResizeHandle col="price" />
+                            </TableHead>
+                            <TableHead style={{ width: colWidths.catalog }} className="relative">
+                              Catalog
+                              <ResizeHandle col="catalog" />
+                            </TableHead>
+                            <TableHead style={{ width: colWidths.subCatalog }} className="relative">
+                              Sub-Catalog
+                              <ResizeHandle col="subCatalog" />
+                            </TableHead>
+                            <TableHead style={{ width: colWidths.detail1 }} className="relative">
+                              Detail 1
+                              <ResizeHandle col="detail1" />
+                            </TableHead>
+                            <TableHead style={{ width: colWidths.detail2 }} className="relative">
+                              Detail 2
+                              <ResizeHandle col="detail2" />
+                            </TableHead>
+                            <TableHead style={{ width: colWidths.detail3 }} className="relative">
+                              Detail 3
+                              <ResizeHandle col="detail3" />
+                            </TableHead>
+                            <TableHead style={{ width: colWidths.detail4 }} className="relative">
+                              Detail 4
+                              <ResizeHandle col="detail4" />
+                            </TableHead>
+                            <TableHead style={{ width: colWidths.created }} className="relative">
+                              <button
+                                className="flex items-center font-medium hover:text-foreground w-full"
+                                onClick={() => handleSort('created_at')}
+                              >
+                                Created
+                                {getSortIcon('created_at')}
+                              </button>
+                              <ResizeHandle col="created" />
+                            </TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {sortedParts.map((part: Part) => (
+                            <TableRow 
+                              key={part.id}
+                              className="cursor-pointer hover:bg-muted/50 transition-colors"
+                              onClick={() => handlePartClick(part.id)}
+                              data-state={selectedPartIds.includes(part.id) ? "selected" : undefined}
+                            >
+                              <TableCell style={{ width: colWidths.select }} onClick={(e) => e.stopPropagation()}>
+                                <Checkbox 
+                                  checked={selectedPartIds.includes(part.id)}
+                                  onCheckedChange={(checked) => handleSelectOne(part.id, !!checked)}
+                                  aria-label={`Select part ${part.sku}`}
+                                />
+                              </TableCell>
+                              <TableCell style={{ width: colWidths.sku }} className="font-medium truncate">{part.sku}</TableCell>
+                              <TableCell style={{ width: colWidths.partNumber }} className="truncate">{part.supplier_part_number}</TableCell>
+                              <TableCell style={{ width: colWidths.name }} className="truncate" title={part.name}>{part.name}</TableCell>
+                              <TableCell style={{ width: colWidths.price }}>
+                                {part.current_price ? (
+                                  <span className="font-medium">
+                                    {part.current_price.unit_price.toLocaleString(undefined, {
+                                      style: 'currency',
+                                      currency: part.current_price.currency
+                                    })}
+                                  </span>
+                                ) : (
+                                  <span className="text-muted-foreground text-sm">-</span>
+                                )}
+                              </TableCell>
+                              <TableCell style={{ width: colWidths.catalog }} className="text-sm truncate" title={getCatalogName(part.catalog_code)}>{getCatalogName(part.catalog_code)}</TableCell>
+                              <TableCell style={{ width: colWidths.subCatalog }} className="text-sm truncate" title={getSubCatalogName(part.catalog_code, part.sub_catalog_code)}>{getSubCatalogName(part.catalog_code, part.sub_catalog_code)}</TableCell>
+                              <TableCell style={{ width: colWidths.detail1 }} className="text-sm truncate" title={getDetailValue(part, 0)}>{getDetailValue(part, 0)}</TableCell>
+                              <TableCell style={{ width: colWidths.detail2 }} className="text-sm truncate" title={getDetailValue(part, 1)}>{getDetailValue(part, 1)}</TableCell>
+                              <TableCell style={{ width: colWidths.detail3 }} className="text-sm truncate" title={getDetailValue(part, 2)}>{getDetailValue(part, 2)}</TableCell>
+                              <TableCell style={{ width: colWidths.detail4 }} className="text-sm truncate" title={getDetailValue(part, 3)}>{getDetailValue(part, 3)}</TableCell>
+                              <TableCell style={{ width: colWidths.created }} className="text-sm text-muted-foreground truncate">
+                                {new Date(part.created_at).toLocaleDateString()}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+
+                    {/* Pagination */}
+                    <div className="flex items-center justify-between px-6 py-4 border-t">
+                      <div className="flex items-center gap-4">
+                        <div className="text-sm text-muted-foreground">
+                          Showing {page * pageSize + 1} to {Math.min((page + 1) * pageSize, totalCount)} of {totalCount} parts
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Label htmlFor="page-size" className="text-sm">
+                            Per page:
+                          </Label>
+                          <Select
+                            value={pageSize.toString()}
+                            onValueChange={(val) => {
+                              setPageSize(Number(val))
+                              setPage(0)
+                            }}
+                          >
+                            <SelectTrigger id="page-size" className="w-20">
+                              <SelectValue placeholder={pageSize.toString()} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="10">10</SelectItem>
+                              <SelectItem value="25">25</SelectItem>
+                              <SelectItem value="50">50</SelectItem>
+                              <SelectItem value="100">100</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setPage(0)}
+                          disabled={page === 0}
+                        >
+                          <ChevronsLeft className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setPage(page - 1)}
+                          disabled={page === 0}
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                        </Button>
+                        <div className="text-sm">
+                          Page {page + 1} of {totalPages}
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setPage(page + 1)}
+                          disabled={page >= totalPages - 1}
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setPage(totalPages - 1)}
+                          disabled={page >= totalPages - 1}
+                        >
+                          <ChevronsRight className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </>
+        ) : (
+          <HierarchyView onPartClick={handlePartClick} />
+        )}
 
         {/* Part Detail Modal */}
         <Dialog open={isModalOpen} onOpenChange={handleCloseModal}>
