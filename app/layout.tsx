@@ -28,6 +28,7 @@ export default function RootLayout({
                   <div className="flex space-x-4">
                     <a href="/upload" className="hover:underline">Upload</a>
                     <a href="/parts" className="hover:underline">Parts</a>
+                    <a href="/manufacturers" className="hover:underline">Manufacturers</a>
                     <a href="/orders" className="hover:underline">Orders</a>
                   </div>
                 </div>
@@ -36,7 +37,7 @@ export default function RootLayout({
             <main className="flex-1">{children}</main>
             <footer className="border-t py-4 mt-8">
               <div className="container mx-auto px-4 text-center">
-                <p className="text-sm text-gray-400">v1.3.9</p>
+                <p className="text-sm text-gray-400">v1.3.10</p>
               </div>
             </footer>
           </div>
