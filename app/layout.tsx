@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google'
 import './globals.css'
 import { Toaster } from '@/components/ui/toaster'
 import { QueryProvider } from '@/components/providers/query-provider'
+import packageJson from '@/package.json'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -21,15 +22,16 @@ export default function RootLayout({
       <body className={inter.className}>
         <QueryProvider>
           <div className="min-h-screen bg-background flex flex-col">
-            <nav className="border-b">
+            <nav className="border-b tie-dye-blue">
               <div className="container mx-auto px-4 py-4">
                 <div className="flex items-center justify-between">
-                  <h1 className="text-2xl font-bold">Quantum Technology</h1>
+                  <h1 className="text-2xl font-bold text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]">Quantum Technology</h1>
                   <div className="flex space-x-4">
-                    <a href="/upload" className="hover:underline">Upload</a>
-                    <a href="/parts" className="hover:underline">Parts</a>
-                    <a href="/manufacturers" className="hover:underline">Manufacturers</a>
-                    <a href="/orders" className="hover:underline">Orders</a>
+                    <a href="/upload" className="text-white hover:underline drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)] font-medium">Upload</a>
+                    <a href="/parts" className="text-white hover:underline drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)] font-medium">Parts</a>
+                    <a href="/manufacturers" className="text-white hover:underline drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)] font-medium">Manufacturers</a>
+                    {/* Orders menu hidden for now – remove 'hidden' to reactivate */}
+                    <a href="/orders" className="hidden text-white hover:underline drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)] font-medium">Orders</a>
                   </div>
                 </div>
               </div>
@@ -37,7 +39,7 @@ export default function RootLayout({
             <main className="flex-1">{children}</main>
             <footer className="border-t py-4 mt-8">
               <div className="container mx-auto px-4 text-center">
-                <p className="text-sm text-gray-400">v1.3.10</p>
+                <p className="text-sm text-gray-400">v{packageJson.version}</p>
               </div>
             </footer>
           </div>
