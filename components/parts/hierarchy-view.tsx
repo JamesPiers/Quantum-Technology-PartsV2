@@ -17,6 +17,7 @@ import {
 
 interface HierarchyViewProps {
   onPartClick: (partId: string) => void
+  manufacturerId?: string
 }
 
 interface CountsData {
@@ -24,11 +25,14 @@ interface CountsData {
   subCatalogCounts: Record<string, number>;
 }
 
-export function HierarchyView({ onPartClick }: HierarchyViewProps) {
+export function HierarchyView({ onPartClick, manufacturerId }: HierarchyViewProps) {
   const { data: counts, isLoading } = useQuery<CountsData>({
-    queryKey: ['part-counts'],
+    queryKey: ['part-counts', manufacturerId],
     queryFn: async () => {
-      const res = await fetch('/api/parts/counts');
+      const params = new URLSearchParams()
+      if (manufacturerId) params.append('manufacturer_id', manufacturerId)
+      
+      const res = await fetch(`/api/parts/counts?${params.toString()}`);
       if (!res.ok) throw new Error('Failed to fetch counts');
       return res.json();
     }
@@ -51,6 +55,7 @@ export function HierarchyView({ onPartClick }: HierarchyViewProps) {
           catalog={catalog} 
           onPartClick={onPartClick}
           counts={counts}
+          manufacturerId={manufacturerId}
         />
       ))}
     </div>
@@ -60,11 +65,13 @@ export function HierarchyView({ onPartClick }: HierarchyViewProps) {
 function CatalogNode({ 
   catalog, 
   onPartClick,
-  counts
+  counts,
+  manufacturerId
 }: { 
   catalog: PartCatalog
   onPartClick: (partId: string) => void
   counts?: CountsData
+  manufacturerId?: string
 }) {
   const [isExpanded, setIsExpanded] = useState(false)
   const hasSubCatalogs = catalog.subCatalogs.length > 0
@@ -98,12 +105,13 @@ function CatalogNode({
           {hasSubCatalogs ? (
             <div className="space-y-2 mt-2">
               {catalog.subCatalogs.map((sub) => (
-                <SubCatalogNode 
+                  <SubCatalogNode 
                   key={sub.code} 
                   catalog={catalog}
                   subCatalog={sub} 
                   onPartClick={onPartClick}
                   counts={counts}
+                  manufacturerId={manufacturerId}
                 />
               ))}
             </div>
@@ -112,6 +120,7 @@ function CatalogNode({
               <PartsList 
                 catalogCode={catalog.code} 
                 onPartClick={onPartClick}
+                manufacturerId={manufacturerId}
               />
             </div>
           )}
@@ -125,12 +134,14 @@ function SubCatalogNode({
   catalog,
   subCatalog, 
   onPartClick,
-  counts
+  counts,
+  manufacturerId
 }: { 
   catalog: PartCatalog
   subCatalog: SubCatalog
   onPartClick: (partId: string) => void
   counts?: CountsData
+  manufacturerId?: string
 }) {
   const [isExpanded, setIsExpanded] = useState(false)
   const countKey = `${catalog.code}:${subCatalog.code}`;
@@ -165,6 +176,7 @@ function SubCatalogNode({
               catalogCode={catalog.code} 
               subCatalogCode={subCatalog.code} 
               onPartClick={onPartClick}
+              manufacturerId={manufacturerId}
             />
           </div>
         </div>
@@ -176,19 +188,24 @@ function SubCatalogNode({
 function PartsList({ 
   catalogCode, 
   subCatalogCode,
-  onPartClick 
+  onPartClick,
+  manufacturerId
 }: { 
   catalogCode: string
   subCatalogCode?: string
   onPartClick: (partId: string) => void
+  manufacturerId?: string
 }) {
   const { data, isLoading, error } = useQuery({
-    queryKey: ['parts', 'hierarchy', catalogCode, subCatalogCode],
+    queryKey: ['parts', 'hierarchy', catalogCode, subCatalogCode, manufacturerId],
     queryFn: async () => {
       const params = new URLSearchParams()
       params.append('catalog_code', catalogCode)
       if (subCatalogCode) {
         params.append('sub_catalog_code', subCatalogCode)
+      }
+      if (manufacturerId) {
+        params.append('manufacturer_id', manufacturerId)
       }
       params.append('limit', '100') // Reasonable limit for category view
 

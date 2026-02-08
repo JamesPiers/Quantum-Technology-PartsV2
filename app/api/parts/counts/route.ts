@@ -4,13 +4,22 @@ import { logger } from '@/lib/utils/logger';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const manufacturerId = searchParams.get('manufacturer_id');
+
     // Fetch all parts with only catalog info to minimize data transfer
     // In a larger system, this should be replaced with a database view or RPC
-    const { data, error } = await supabaseAdmin
+    let query = supabaseAdmin
       .from('parts')
       .select('catalog_code, sub_catalog_code');
+
+    if (manufacturerId) {
+      query = query.eq('manufacturer_id', manufacturerId);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       logger.error('Failed to fetch part counts', { error: error.message });
