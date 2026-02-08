@@ -15,6 +15,14 @@ export async function POST(
   try {
     const extractionId = params.id;
 
+    // Parse request body if available
+    let body: any = {};
+    try {
+      body = await request.json();
+    } catch (e) {
+      // Body might be empty if called without payload (legacy/default)
+    }
+
     // Get extraction data
     const { data: extraction, error: extractionError } = await supabaseAdmin
       .from('extractions')
@@ -35,14 +43,31 @@ export async function POST(
 
     const normalized = extraction.normalized_json as NormalizedExtraction;
     const supplierId = (extraction.documents as any).supplier_id;
+    
+    // Use line items from body if available, otherwise fallback to normalized extraction
+    const lineItems = body.lineItems || normalized.line_items;
+    
+    // Use supplier info from body if available for defaults
+    const supplierInfo = body.supplierInfo || {};
+    const defaultCurrency = supplierInfo.currency || normalized.currency || 'USD';
+    const defaultQuoteDate = supplierInfo.quote_date || normalized.quote_date || new Date().toISOString().split('T')[0];
+    const defaultValidUntil = supplierInfo.valid_until || normalized.valid_until;
 
     let partsCreated = 0;
     let pricesCreated = 0;
 
     // Process each line item
-    for (const item of normalized.line_items) {
-      // Generate SKU from supplier part number (you may want a more sophisticated SKU generation)
-      const sku = `SKU-${item.supplier_part_number}`;
+    for (const item of lineItems) {
+      // Generate SKU from supplier part number or use provided SKU
+      const sku = item.sku || `SKU-${item.supplier_part_number}`;
+
+      // Prepare attributes - merge standard fields with catalog attributes
+      const attributes = {
+        ...(item.attributes || {}),
+        uom: item.uom,
+        moq: item.moq,
+        lead_time_days: item.lead_time_days,
+      };
 
       // Upsert part
       const { data: part, error: partError } = await supabaseAdmin
@@ -53,11 +78,10 @@ export async function POST(
             supplier_part_number: item.supplier_part_number,
             name: item.description,
             description: item.description,
-            attributes: {
-              uom: item.uom,
-              moq: item.moq,
-              lead_time_days: item.lead_time_days,
-            },
+            manufacturer_id: item.manufacturer_id || null,
+            catalog_code: item.catalog_code || null,
+            sub_catalog_code: item.sub_catalog_code || null,
+            attributes: attributes,
           },
           {
             onConflict: 'sku',
@@ -79,21 +103,19 @@ export async function POST(
       partsCreated++;
 
       // Create part_prices for each quantity break
-      for (const qtyBreak of item.qty_breaks) {
-        const validFrom = normalized.quote_date || new Date().toISOString().split('T')[0];
-        const validThrough = normalized.valid_until;
-
+      const qtyBreaks = item.qty_breaks || [];
+      for (const qtyBreak of qtyBreaks) {
         const { error: priceError } = await supabaseAdmin
           .from('part_prices')
           .insert({
             part_id: part.id,
             supplier_id: supplierId,
-            currency: normalized.currency || 'USD',
+            currency: defaultCurrency,
             unit_price: qtyBreak.unit_price,
             moq: qtyBreak.min_qty,
             lead_time_days: item.lead_time_days,
-            valid_from: validFrom,
-            valid_through: validThrough,
+            valid_from: defaultQuoteDate,
+            valid_through: defaultValidUntil,
             document_id: extraction.document_id,
             extraction_id: extractionId,
           });
@@ -112,9 +134,19 @@ export async function POST(
     }
 
     // Update extraction status to approved
+    // Also update the normalized_json with the approved data so we have a record of what was actually imported
+    const updatedNormalized = {
+      ...normalized,
+      line_items: lineItems,
+      ...(Object.keys(supplierInfo).length > 0 ? supplierInfo : {})
+    };
+
     const { error: updateError } = await supabaseAdmin
       .from('extractions')
-      .update({ status: 'approved' })
+      .update({ 
+        status: 'approved',
+        normalized_json: updatedNormalized 
+      })
       .eq('id', extractionId);
 
     if (updateError) {
@@ -146,4 +178,3 @@ export async function POST(
     );
   }
 }
-

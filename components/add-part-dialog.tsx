@@ -12,6 +12,8 @@ import { useDropzone } from 'react-dropzone'
 import { cn } from '@/lib/utils/cn'
 import { PART_CATALOGS, PartCatalog, SubCatalog } from '@/lib/constants/part-catalogs'
 import { getSuppliers, createSupplier } from '@/app/actions/supplier'
+import { getManufacturers, createManufacturer } from '@/app/actions/manufacturer'
+import { Manufacturer } from '@/lib/types/database.types'
 
 interface AddPartDialogProps {
   open: boolean
@@ -29,6 +31,7 @@ export function AddPartDialog({ open, onOpenChange, onSuccess }: AddPartDialogPr
   const { toast } = useToast()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
+  const [manufacturers, setManufacturers] = useState<Manufacturer[]>([])
   
   // Add Supplier State
   const [showAddSupplierConfirm, setShowAddSupplierConfirm] = useState(false)
@@ -36,6 +39,12 @@ export function AddPartDialog({ open, onOpenChange, onSuccess }: AddPartDialogPr
   const [newSupplierName, setNewSupplierName] = useState('')
   const [isCreatingSupplier, setIsCreatingSupplier] = useState(false)
   
+  // Add Manufacturer State
+  const [showAddManufacturerConfirm, setShowAddManufacturerConfirm] = useState(false)
+  const [isAddingManufacturer, setIsAddingManufacturer] = useState(false)
+  const [newManufacturerName, setNewManufacturerName] = useState('')
+  const [isCreatingManufacturer, setIsCreatingManufacturer] = useState(false)
+
   // Form State
   const [formData, setFormData] = useState({
     sku: '',
@@ -43,6 +52,7 @@ export function AddPartDialog({ open, onOpenChange, onSuccess }: AddPartDialogPr
     name: '',
     description: '',
     supplier_id: '',
+    manufacturer_id: '',
     unit_price: '',
     currency: 'USD',
     catalog_code: '',
@@ -75,12 +85,34 @@ export function AddPartDialog({ open, onOpenChange, onSuccess }: AddPartDialogPr
           console.error('Error fetching suppliers:', err)
         }
       }
+
+      const fetchManufacturers = async () => {
+        try {
+          const { data, error } = await getManufacturers()
+          
+          if (error) {
+            console.error('Error fetching manufacturers:', error)
+            // Non-blocking error, just log it
+          }
+          
+          if (data) setManufacturers(data)
+        } catch (err) {
+          console.error('Error fetching manufacturers:', err)
+        }
+      }
+
       fetchSuppliers()
+      fetchManufacturers()
       
       // Reset add supplier state
       setShowAddSupplierConfirm(false)
       setIsAddingSupplier(false)
       setNewSupplierName('')
+
+      // Reset add manufacturer state
+      setShowAddManufacturerConfirm(false)
+      setIsAddingManufacturer(false)
+      setNewManufacturerName('')
     }
   }, [open, toast])
 
@@ -114,6 +146,38 @@ export function AddPartDialog({ open, onOpenChange, onSuccess }: AddPartDialogPr
       })
     } finally {
       setIsCreatingSupplier(false)
+    }
+  }
+
+  const handleCreateManufacturer = async () => {
+    if (!newManufacturerName.trim()) return
+
+    setIsCreatingManufacturer(true)
+    try {
+      const { data, error } = await createManufacturer(newManufacturerName.trim())
+
+      if (error) throw new Error(error)
+
+      if (data) {
+        setManufacturers(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)))
+        handleChange('manufacturer_id', data.id)
+        setIsAddingManufacturer(false)
+        setShowAddManufacturerConfirm(false)
+        setNewManufacturerName('')
+        toast({
+          title: "Success",
+          description: "New manufacturer added successfully",
+        })
+      }
+    } catch (error) {
+      console.error('Error creating manufacturer:', error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to create manufacturer",
+        variant: "destructive"
+      })
+    } finally {
+      setIsCreatingManufacturer(false)
     }
   }
 
@@ -214,6 +278,7 @@ export function AddPartDialog({ open, onOpenChange, onSuccess }: AddPartDialogPr
         document_id: documentId,
         catalog_code: formData.catalog_code || null,
         sub_catalog_code: formData.sub_catalog_code || null,
+        manufacturer_id: formData.manufacturer_id || null,
         attributes: Object.keys(formData.attributes).length > 0 ? formData.attributes : null,
       }
 
@@ -251,6 +316,7 @@ export function AddPartDialog({ open, onOpenChange, onSuccess }: AddPartDialogPr
         name: '',
         description: '',
         supplier_id: '',
+        manufacturer_id: '',
         unit_price: '',
         currency: 'USD',
         catalog_code: '',
@@ -261,6 +327,9 @@ export function AddPartDialog({ open, onOpenChange, onSuccess }: AddPartDialogPr
       setShowAddSupplierConfirm(false)
       setIsAddingSupplier(false)
       setNewSupplierName('')
+      setShowAddManufacturerConfirm(false)
+      setIsAddingManufacturer(false)
+      setNewManufacturerName('')
 
     } catch (error) {
       console.error(error)
@@ -320,6 +389,86 @@ export function AddPartDialog({ open, onOpenChange, onSuccess }: AddPartDialogPr
                 onChange={(e) => handleChange('description', e.target.value)}
                 placeholder="Part description..."
               />
+            </div>
+
+            <div className="col-span-2 space-y-2">
+              <Label htmlFor="manufacturer">Manufacturer</Label>
+              {!isAddingManufacturer ? (
+                <Select 
+                  value={formData.manufacturer_id} 
+                  onValueChange={(val) => {
+                    if (val === 'new-manufacturer') {
+                      setShowAddManufacturerConfirm(true)
+                    } else {
+                      handleChange('manufacturer_id', val)
+                    }
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select Manufacturer" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="new-manufacturer" className="text-primary font-medium">
+                      <div className="flex items-center">
+                        <Plus className="mr-2 h-4 w-4" />
+                        Add New Manufacturer
+                      </div>
+                    </SelectItem>
+                    {manufacturers.length > 0 ? (
+                      manufacturers.map(m => (
+                        <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                      ))
+                    ) : (
+                      <div className="p-2 text-sm text-muted-foreground text-center">No manufacturers found</div>
+                    )}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="flex items-center space-x-2">
+                  <Input 
+                    value={newManufacturerName}
+                    onChange={(e) => setNewManufacturerName(e.target.value)}
+                    placeholder="New Manufacturer Name"
+                    autoFocus
+                  />
+                  <Button size="sm" onClick={handleCreateManufacturer} disabled={isCreatingManufacturer}>
+                    {isCreatingManufacturer ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setIsAddingManufacturer(false)}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+
+              {showAddManufacturerConfirm && !isAddingManufacturer && (
+                <div className="mt-2 p-3 bg-muted/50 rounded-md border border-border">
+                  <div className="flex items-start space-x-2">
+                    <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5" />
+                    <div className="space-y-2 flex-1">
+                      <p className="text-sm font-medium">Are you sure you want to add a new manufacturer?</p>
+                      <div className="flex space-x-2">
+                        <Button 
+                          size="sm" 
+                          variant="default" 
+                          onClick={() => {
+                            setShowAddManufacturerConfirm(false)
+                            setIsAddingManufacturer(true)
+                          }}
+                        >
+                          Yes, Add New
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          onClick={() => setShowAddManufacturerConfirm(false)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

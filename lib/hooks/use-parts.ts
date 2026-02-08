@@ -5,12 +5,21 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Part, PartWithDetails } from '@/lib/types/database.types'
 
-export function useParts(search?: string) {
+export interface UsePartsOptions {
+  search?: string
+  catalogCode?: string
+  subCatalogCode?: string
+}
+
+export function useParts(options: UsePartsOptions = {}) {
+  const { search, catalogCode, subCatalogCode } = options
   return useQuery({
-    queryKey: ['parts', search],
+    queryKey: ['parts', search, catalogCode, subCatalogCode],
     queryFn: async () => {
       const params = new URLSearchParams()
       if (search) params.append('search', search)
+      if (catalogCode) params.append('catalog_code', catalogCode)
+      if (subCatalogCode) params.append('sub_catalog_code', subCatalogCode)
 
       const response = await fetch(`/api/parts?${params.toString()}`)
       if (!response.ok) throw new Error('Failed to fetch parts')

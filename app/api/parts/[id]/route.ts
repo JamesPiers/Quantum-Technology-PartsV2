@@ -17,7 +17,7 @@ export async function GET(
     // Fetch part details
     const { data: part, error: partError } = await supabaseAdmin
       .from('parts')
-      .select('*')
+      .select('*, manufacturer:manufacturers(*)')
       .eq('id', params.id)
       .single();
 

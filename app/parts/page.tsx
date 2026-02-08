@@ -38,8 +38,11 @@ import {
   Plus,
   GripVertical,
   LayoutGrid,
-  List
+  List,
+  Download,
+  Upload
 } from 'lucide-react'
+import * as XLSX from 'xlsx'
 import { Part } from '@/lib/types/database.types'
 import { usePart, useDeletePart } from '@/lib/hooks/use-parts'
 import { PartDetailContent } from '@/components/part-detail-content'
@@ -47,6 +50,8 @@ import { useToast } from '@/components/ui/use-toast'
 import { AddPartDialog } from '@/components/add-part-dialog'
 import { PART_CATALOGS } from '@/lib/constants/part-catalogs'
 import { HierarchyView } from '@/components/parts/hierarchy-view'
+import { Progress } from '@/components/ui/progress'
+import { DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 type SortField = 'sku' | 'supplier_part_number' | 'name' | 'created_at'
 type SortOrder = 'asc' | 'desc'
@@ -75,6 +80,14 @@ export default function PartsPage() {
   const [skuFilter, setSkuFilter] = useState('')
   const [nameFilter, setNameFilter] = useState('')
   const [partNumberFilter, setPartNumberFilter] = useState('')
+  const [catalogFilter, setCatalogFilter] = useState<string>('all')
+  const [subCatalogFilter, setSubCatalogFilter] = useState<string>('all')
+  const [isExporting, setIsExporting] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
+  const [importProgress, setImportProgress] = useState(0)
+  const [importStats, setImportStats] = useState({ processed: 0, failed: 0, total: 0 })
+  const [showProgressDialog, setShowProgressDialog] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   
   // Column resizing
   const [colWidths, setColWidths] = useState<Record<string, number>>({
@@ -126,12 +139,20 @@ export default function PartsPage() {
 
   // Fetch parts
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ['parts', debouncedSearch, page, pageSize, sortField, sortOrder],
+    queryKey: ['parts', debouncedSearch, page, pageSize, sortField, sortOrder, catalogFilter, subCatalogFilter],
     queryFn: async () => {
       const params = new URLSearchParams()
       if (debouncedSearch) params.append('search', debouncedSearch)
       params.append('limit', pageSize.toString())
       params.append('offset', (page * pageSize).toString())
+      
+      if (catalogFilter && catalogFilter !== 'all') {
+        params.append('catalog_code', catalogFilter)
+      }
+      
+      if (subCatalogFilter && subCatalogFilter !== 'all') {
+        params.append('sub_catalog_code', subCatalogFilter)
+      }
 
       const response = await fetch(`/api/parts?${params.toString()}`)
       if (!response.ok) throw new Error('Failed to fetch parts')
@@ -240,9 +261,11 @@ export default function PartsPage() {
     setSkuFilter('')
     setNameFilter('')
     setPartNumberFilter('')
+    setCatalogFilter('all')
+    setSubCatalogFilter('all')
   }
 
-  const hasActiveFilters = search || skuFilter || nameFilter || partNumberFilter
+  const hasActiveFilters = search || skuFilter || nameFilter || partNumberFilter || (catalogFilter && catalogFilter !== 'all') || (subCatalogFilter && subCatalogFilter !== 'all')
 
   const getCatalogName = (code: string | null | undefined) => {
     if (!code) return '-'
@@ -266,6 +289,234 @@ export default function PartsPage() {
     const key = catalog.details[index]
     const val = part.attributes[key]
     return val !== undefined && val !== null ? String(val) : '-'
+  }
+
+  // Get current catalog details for headers
+  const activeCatalog = PART_CATALOGS.find(c => c.code === catalogFilter)
+  const detailHeaders = activeCatalog?.details || []
+
+  const handleExport = async () => {
+    setIsExporting(true)
+    try {
+      const params = new URLSearchParams()
+      if (debouncedSearch) params.append('search', debouncedSearch)
+      params.append('all', 'true')
+      
+      if (catalogFilter && catalogFilter !== 'all') {
+        params.append('catalog_code', catalogFilter)
+      }
+      
+      if (subCatalogFilter && subCatalogFilter !== 'all') {
+        params.append('sub_catalog_code', subCatalogFilter)
+      }
+
+      const response = await fetch(`/api/parts?${params.toString()}`)
+      if (!response.ok) throw new Error('Failed to fetch parts for export')
+      const { data } = await response.json()
+      
+      // Apply client-side filters
+      const exportedParts = data.filter((part: Part) => {
+        if (skuFilter && !part.sku.toLowerCase().includes(skuFilter.toLowerCase())) return false
+        if (nameFilter && !part.name.toLowerCase().includes(nameFilter.toLowerCase())) return false
+        if (partNumberFilter && !part.supplier_part_number.toLowerCase().includes(partNumberFilter.toLowerCase())) return false
+        return true
+      })
+
+      // 1. Identify all unique attribute keys across all parts
+      const allAttributeKeys = new Set<string>()
+      exportedParts.forEach((part: Part) => {
+        if (part.attributes) {
+          Object.keys(part.attributes).forEach(key => allAttributeKeys.add(key))
+        }
+      })
+      const sortedAttributeKeys = Array.from(allAttributeKeys).sort()
+
+      // 2. Flatten data
+      const flattenPart = (part: any) => {
+        const flat: any = {
+          id: part.id,
+          sku: part.sku,
+          supplier_part_number: part.supplier_part_number,
+          name: part.name,
+          description: part.description,
+          manufacturer_id: part.manufacturer_id,
+          catalog_code: part.catalog_code,
+          sub_catalog_code: part.sub_catalog_code,
+          drawing_url: part.drawing_url,
+          created_at: part.created_at,
+          // Price info
+          unit_price: part.current_price?.unit_price,
+          currency: part.current_price?.currency,
+          supplier_id: part.current_price?.supplier_id,
+          moq: part.current_price?.moq,
+          lead_time_days: part.current_price?.lead_time_days,
+        }
+
+        // Add attributes as top-level columns
+        sortedAttributeKeys.forEach(key => {
+            if (part.attributes && part.attributes[key] !== undefined) {
+                flat[key] = part.attributes[key]
+            }
+        })
+        
+        return flat
+      }
+
+      const rows = exportedParts.map(flattenPart)
+      
+      const ws = XLSX.utils.json_to_sheet(rows)
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, "Parts")
+      XLSX.writeFile(wb, "parts_export.xlsx")
+      
+      toast({
+        title: "Export Successful",
+        description: `Exported ${rows.length} parts.`
+      })
+    } catch (error) {
+      console.error('Export error:', error)
+      toast({
+        title: "Export Failed",
+        description: "Could not export parts.",
+        variant: "destructive"
+      })
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click()
+  }
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setIsImporting(true)
+    setShowProgressDialog(true)
+    setImportProgress(0)
+    setImportStats({ processed: 0, failed: 0, total: 0 })
+
+    try {
+      const data = await file.arrayBuffer()
+      const workbook = XLSX.read(data)
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]]
+      const jsonData = XLSX.utils.sheet_to_json(worksheet)
+      
+      // Transform flat JSON back to structured Part objects
+      // We need to identify which fields are standard and which are attributes
+      const standardFields = new Set([
+        'id', 'sku', 'supplier_part_number', 'name', 'description', 
+        'manufacturer_id', 'catalog_code', 'sub_catalog_code', 'drawing_url', 'created_at',
+        'unit_price', 'currency', 'supplier_id', 'moq', 'lead_time_days', 'attributes' // attributes might be there if manually added, but we construct it
+      ])
+
+      const processedData = jsonData.map((row: any) => {
+        const part: any = { ...row }
+        const attributes: Record<string, any> = {}
+        
+        // If there's an existing attributes JSON string (legacy or manual), parse it
+        if (row.attributes) {
+            try {
+                const parsed = typeof row.attributes === 'string' ? JSON.parse(row.attributes) : row.attributes
+                Object.assign(attributes, parsed)
+            } catch (e) {
+                // ignore
+            }
+        }
+
+        // Move non-standard fields to attributes
+        Object.keys(row).forEach(key => {
+            if (!standardFields.has(key)) {
+                attributes[key] = row[key]
+                delete part[key] // Remove from top level to avoid cluttering or errors if API is strict (API handles it though)
+            }
+        })
+
+        part.attributes = attributes
+        return part
+      })
+
+      const totalRows = processedData.length
+      setImportStats(prev => ({ ...prev, total: totalRows }))
+
+      const CHUNK_SIZE = 10
+      const chunks = []
+      for (let i = 0; i < totalRows; i += CHUNK_SIZE) {
+        chunks.push(processedData.slice(i, i + CHUNK_SIZE))
+      }
+
+      let processedCount = 0
+      let failedCount = 0
+      const allErrors: any[] = []
+
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i]
+        
+        try {
+          const response = await fetch('/api/parts/batch-update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ parts: chunk })
+          })
+
+          if (!response.ok) {
+            const resData = await response.json()
+            throw new Error(resData.error || 'Failed to import chunk')
+          }
+
+          const result = await response.json()
+          
+          processedCount += result.count || 0
+          if (result.errors) {
+            failedCount += result.errors.length
+            allErrors.push(...result.errors)
+          }
+        } catch (err) {
+          console.error(`Error processing chunk ${i}:`, err)
+          failedCount += chunk.length // Assuming entire chunk failed if request failed
+        }
+
+        const currentProgress = Math.round(((i + 1) / chunks.length) * 100)
+        setImportProgress(currentProgress)
+        setImportStats(prev => ({ 
+          ...prev, 
+          processed: processedCount, 
+          failed: failedCount 
+        }))
+      }
+      
+      // Delay closing dialog slightly to show 100%
+      await new Promise(resolve => setTimeout(resolve, 500))
+      setShowProgressDialog(false)
+
+      if (allErrors.length > 0 || failedCount > 0) {
+        toast({
+            title: "Import Completed with Errors",
+            description: `Processed: ${processedCount}. Failed: ${failedCount}. Check console for details.`,
+            variant: "destructive"
+        })
+        console.warn('Import errors:', allErrors)
+      } else {
+          toast({
+            title: "Import Successful",
+            description: `Successfully processed ${processedCount} parts.`
+          })
+      }
+      refetch()
+    } catch (error) {
+      console.error('Import error:', error)
+      setShowProgressDialog(false)
+      toast({
+        title: "Import Failed",
+        description: error instanceof Error ? error.message : "Could not import parts.",
+        variant: "destructive"
+      })
+    } finally {
+      setIsImporting(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
   }
 
   // Resizing Handlers
@@ -353,6 +604,35 @@ export default function PartsPage() {
               <Plus className="h-4 w-4" />
               Add New Part
             </Button>
+            
+            <div className="h-6 w-px bg-border mx-2" />
+            
+            <Button
+              variant="outline"
+              onClick={handleExport}
+              disabled={isExporting}
+              className="flex items-center gap-2"
+            >
+              <Download className="h-4 w-4" />
+              {isExporting ? 'Exporting...' : 'Export'}
+            </Button>
+
+            <Button
+              variant="outline"
+              onClick={handleImportClick}
+              disabled={isImporting}
+              className="flex items-center gap-2"
+            >
+              <Upload className="h-4 w-4" />
+              {isImporting ? 'Importing...' : 'Import'}
+            </Button>
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              accept=".xlsx, .xls"
+              className="hidden"
+            />
           </div>
         </div>
 
@@ -415,6 +695,52 @@ export default function PartsPage() {
                   {/* Advanced Filters */}
                   {showFilters && (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t">
+                      <div className="space-y-2">
+                        <Label>Catalog</Label>
+                        <Select 
+                          value={catalogFilter} 
+                          onValueChange={(val) => {
+                            setCatalogFilter(val)
+                            setSubCatalogFilter('all') // Reset sub-catalog when catalog changes
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="All Catalogs" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Catalogs</SelectItem>
+                            {PART_CATALOGS.map((catalog) => (
+                              <SelectItem key={catalog.code} value={catalog.code}>
+                                {catalog.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label>Sub-Catalog</Label>
+                        <Select 
+                          value={subCatalogFilter} 
+                          onValueChange={setSubCatalogFilter}
+                          disabled={!catalogFilter || catalogFilter === 'all'}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="All Sub-Catalogs" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Sub-Catalogs</SelectItem>
+                            {catalogFilter && catalogFilter !== 'all' && PART_CATALOGS
+                              .find(c => c.code === catalogFilter)
+                              ?.subCatalogs.map((sub) => (
+                                <SelectItem key={sub.code} value={sub.code}>
+                                  {sub.name}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
                       <div className="space-y-2">
                         <Label htmlFor="sku-filter">SKU</Label>
                         <Input
@@ -516,19 +842,19 @@ export default function PartsPage() {
                               <ResizeHandle col="subCatalog" />
                             </TableHead>
                             <TableHead style={{ width: colWidths.detail1 }} className="relative">
-                              Detail 1
+                              <span title={detailHeaders[0] || 'Detail 1'}>{detailHeaders[0] || 'Detail 1'}</span>
                               <ResizeHandle col="detail1" />
                             </TableHead>
                             <TableHead style={{ width: colWidths.detail2 }} className="relative">
-                              Detail 2
+                              <span title={detailHeaders[1] || 'Detail 2'}>{detailHeaders[1] || 'Detail 2'}</span>
                               <ResizeHandle col="detail2" />
                             </TableHead>
                             <TableHead style={{ width: colWidths.detail3 }} className="relative">
-                              Detail 3
+                              <span title={detailHeaders[2] || 'Detail 3'}>{detailHeaders[2] || 'Detail 3'}</span>
                               <ResizeHandle col="detail3" />
                             </TableHead>
                             <TableHead style={{ width: colWidths.detail4 }} className="relative">
-                              Detail 4
+                              <span title={detailHeaders[3] || 'Detail 4'}>{detailHeaders[3] || 'Detail 4'}</span>
                               <ResizeHandle col="detail4" />
                             </TableHead>
                             <TableHead style={{ width: colWidths.created }} className="relative">
@@ -575,10 +901,10 @@ export default function PartsPage() {
                               </TableCell>
                               <TableCell style={{ width: colWidths.catalog }} className="text-sm truncate" title={getCatalogName(part.catalog_code)}>{getCatalogName(part.catalog_code)}</TableCell>
                               <TableCell style={{ width: colWidths.subCatalog }} className="text-sm truncate" title={getSubCatalogName(part.catalog_code, part.sub_catalog_code)}>{getSubCatalogName(part.catalog_code, part.sub_catalog_code)}</TableCell>
-                              <TableCell style={{ width: colWidths.detail1 }} className="text-sm truncate" title={getDetailValue(part, 0)}>{getDetailValue(part, 0)}</TableCell>
-                              <TableCell style={{ width: colWidths.detail2 }} className="text-sm truncate" title={getDetailValue(part, 1)}>{getDetailValue(part, 1)}</TableCell>
-                              <TableCell style={{ width: colWidths.detail3 }} className="text-sm truncate" title={getDetailValue(part, 2)}>{getDetailValue(part, 2)}</TableCell>
-                              <TableCell style={{ width: colWidths.detail4 }} className="text-sm truncate" title={getDetailValue(part, 3)}>{getDetailValue(part, 3)}</TableCell>
+                              <TableCell style={{ width: colWidths.detail1 }} className="text-sm truncate" title={`${detailHeaders[0] || 'Detail 1'}: ${getDetailValue(part, 0)}`}>{getDetailValue(part, 0)}</TableCell>
+                              <TableCell style={{ width: colWidths.detail2 }} className="text-sm truncate" title={`${detailHeaders[1] || 'Detail 2'}: ${getDetailValue(part, 1)}`}>{getDetailValue(part, 1)}</TableCell>
+                              <TableCell style={{ width: colWidths.detail3 }} className="text-sm truncate" title={`${detailHeaders[2] || 'Detail 3'}: ${getDetailValue(part, 2)}`}>{getDetailValue(part, 2)}</TableCell>
+                              <TableCell style={{ width: colWidths.detail4 }} className="text-sm truncate" title={`${detailHeaders[3] || 'Detail 4'}: ${getDetailValue(part, 3)}`}>{getDetailValue(part, 3)}</TableCell>
                               <TableCell style={{ width: colWidths.created }} className="text-sm text-muted-foreground truncate">
                                 {new Date(part.created_at).toLocaleDateString()}
                               </TableCell>
@@ -688,6 +1014,31 @@ export default function PartsPage() {
           onOpenChange={setIsAddDialogOpen} 
           onSuccess={() => refetch()} 
         />
+
+        {/* Import Progress Dialog */}
+        <Dialog open={showProgressDialog} onOpenChange={setShowProgressDialog}>
+          <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+            <DialogHeader>
+              <DialogTitle>Importing Parts...</DialogTitle>
+              <DialogDescription>
+                Please wait while we process your Excel file. Do not close this window.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <Progress value={importProgress} className="w-full" />
+              <div className="flex justify-between text-sm text-muted-foreground">
+                <span>Progress: {importProgress}%</span>
+                <span>
+                  {importStats.processed + importStats.failed} / {importStats.total} processed
+                </span>
+              </div>
+              <div className="text-xs text-muted-foreground space-y-1">
+                 <div>Success: {importStats.processed}</div>
+                 {importStats.failed > 0 && <div className="text-destructive">Failed: {importStats.failed}</div>}
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   )

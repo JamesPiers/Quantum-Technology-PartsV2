@@ -18,18 +18,7 @@ import {
 } from '@/components/ui/table'
 import { Loader2, CheckCircle, XCircle, ExternalLink, Pencil, ChevronDown, ChevronUp } from 'lucide-react'
 import { Extraction } from '@/lib/types/database.types'
-
-interface LineItem {
-  supplier_part_number: string
-  description: string
-  uom?: string
-  qty_breaks: Array<{
-    min_qty: number
-    unit_price: number
-  }>
-  lead_time_days?: number
-  moq?: number
-}
+import { EditLineItemDialog, LineItem } from '@/components/edit-line-item-dialog'
 
 export default function ReviewPage({
   params,
@@ -40,7 +29,11 @@ export default function ReviewPage({
   const { toast } = useToast()
   const [isApproving, setIsApproving] = useState(false)
   const [isRejecting, setIsRejecting] = useState(false)
-  const [editingLineItem, setEditingLineItem] = useState<number | null>(null)
+  
+  // Edit Dialog State
+  const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null)
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+
   const [lineItems, setLineItems] = useState<LineItem[]>([])
   const [supplierInfo, setSupplierInfo] = useState({
     supplier_name: '',
@@ -98,6 +91,13 @@ export default function ReviewPage({
         `/api/extractions/${params.extractionId}/approve`,
         {
           method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            supplierInfo,
+            lineItems,
+          }),
         }
       )
 
@@ -158,6 +158,24 @@ export default function ReviewPage({
     }
   }
 
+  const updateSupplierInfo = (field: string, value: string) => {
+    setSupplierInfo({ ...supplierInfo, [field]: value })
+  }
+
+  const handleEditItem = (index: number) => {
+    setEditingItemIndex(index)
+    setIsEditDialogOpen(true)
+  }
+
+  const handleSaveLineItem = (updatedItem: LineItem) => {
+    if (editingItemIndex === null) return
+    const newItems = [...lineItems]
+    newItems[editingItemIndex] = updatedItem
+    setLineItems(newItems)
+    setIsEditDialogOpen(false)
+    setEditingItemIndex(null)
+  }
+
   if (isLoading) {
     return (
       <div className="container mx-auto px-4 py-8 flex items-center justify-center min-h-[50vh]">
@@ -191,16 +209,6 @@ export default function ReviewPage({
         </Card>
       </div>
     )
-  }
-
-  const updateLineItem = (index: number, field: keyof LineItem, value: any) => {
-    const updatedLineItems = [...lineItems]
-    updatedLineItems[index] = { ...updatedLineItems[index], [field]: value }
-    setLineItems(updatedLineItems)
-  }
-
-  const updateSupplierInfo = (field: string, value: string) => {
-    setSupplierInfo({ ...supplierInfo, [field]: value })
   }
 
   return (
@@ -298,41 +306,14 @@ export default function ReviewPage({
                   {lineItems.map((item, index) => (
                     <TableRow key={index}>
                       <TableCell>
-                        {editingLineItem === index ? (
-                          <Input
-                            value={item.supplier_part_number}
-                            onChange={(e) =>
-                              updateLineItem(index, 'supplier_part_number', e.target.value)
-                            }
-                            className="h-8"
-                          />
-                        ) : (
-                          <div className="font-medium">{item.supplier_part_number}</div>
-                        )}
+                        <div className="font-medium">{item.supplier_part_number}</div>
+                        {item.sku && <div className="text-xs text-muted-foreground">{item.sku}</div>}
                       </TableCell>
                       <TableCell>
-                        {editingLineItem === index ? (
-                          <Input
-                            value={item.description}
-                            onChange={(e) =>
-                              updateLineItem(index, 'description', e.target.value)
-                            }
-                            className="h-8"
-                          />
-                        ) : (
-                          <div>{item.description}</div>
-                        )}
+                        <div>{item.description}</div>
                       </TableCell>
                       <TableCell>
-                        {editingLineItem === index ? (
-                          <Input
-                            value={item.uom || ''}
-                            onChange={(e) => updateLineItem(index, 'uom', e.target.value)}
-                            className="h-8"
-                          />
-                        ) : (
-                          <div>{item.uom || '-'}</div>
-                        )}
+                        <div>{item.uom || '-'}</div>
                       </TableCell>
                       <TableCell>
                         <div className="text-sm">
@@ -344,51 +325,19 @@ export default function ReviewPage({
                         </div>
                       </TableCell>
                       <TableCell>
-                        {editingLineItem === index ? (
-                          <Input
-                            type="number"
-                            value={item.lead_time_days || ''}
-                            onChange={(e) =>
-                              updateLineItem(index, 'lead_time_days', parseInt(e.target.value))
-                            }
-                            className="h-8"
-                          />
-                        ) : (
-                          <div>{item.lead_time_days ? `${item.lead_time_days} days` : '-'}</div>
-                        )}
+                        <div>{item.lead_time_days ? `${item.lead_time_days} days` : '-'}</div>
                       </TableCell>
                       <TableCell>
-                        {editingLineItem === index ? (
-                          <Input
-                            type="number"
-                            value={item.moq || ''}
-                            onChange={(e) =>
-                              updateLineItem(index, 'moq', parseInt(e.target.value))
-                            }
-                            className="h-8"
-                          />
-                        ) : (
-                          <div>{item.moq || '-'}</div>
-                        )}
+                        <div>{item.moq || '-'}</div>
                       </TableCell>
                       <TableCell>
-                        {editingLineItem === index ? (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setEditingLineItem(null)}
-                          >
-                            Save
-                          </Button>
-                        ) : (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setEditingLineItem(index)}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleEditItem(index)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -532,7 +481,18 @@ export default function ReviewPage({
           </div>
         </div>
       </div>
+      
+      {editingItemIndex !== null && lineItems[editingItemIndex] && (
+        <EditLineItemDialog 
+          open={isEditDialogOpen} 
+          onOpenChange={(open) => {
+            setIsEditDialogOpen(open)
+            if (!open) setEditingItemIndex(null)
+          }}
+          data={lineItems[editingItemIndex]}
+          onSave={handleSaveLineItem}
+        />
+      )}
     </div>
   )
 }
-

@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { PartWithDetails, PartPriceWithRelations } from '@/lib/types/database.types'
+import { PartWithDetails, PartPriceWithRelations, Manufacturer } from '@/lib/types/database.types'
 import { getCatalogByCode, getSubCatalogByCode } from '@/lib/utils/catalog-utils'
 import { useUpdatePart } from '@/lib/hooks/use-parts'
+import { getManufacturers, createManufacturer } from '@/app/actions/manufacturer'
 import { PART_CATALOGS } from '@/lib/constants/part-catalogs'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -36,7 +37,10 @@ import {
   Save,
   X,
   Plus,
-  Trash2
+  Trash2,
+  Loader2,
+  Check,
+  AlertCircle
 } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
 
@@ -48,6 +52,14 @@ export function PartDetailContent({ part }: PartDetailContentProps) {
   const { toast } = useToast()
   const updatePart = useUpdatePart(part.id)
   const [isEditing, setIsEditing] = useState(false)
+  const [manufacturers, setManufacturers] = useState<Manufacturer[]>([])
+  
+  // Add Manufacturer State
+  const [showAddManufacturerConfirm, setShowAddManufacturerConfirm] = useState(false)
+  const [isAddingManufacturer, setIsAddingManufacturer] = useState(false)
+  const [newManufacturerName, setNewManufacturerName] = useState('')
+  const [isCreatingManufacturer, setIsCreatingManufacturer] = useState(false)
+
   const [formData, setFormData] = useState({
     name: part.name,
     sku: part.sku,
@@ -55,9 +67,19 @@ export function PartDetailContent({ part }: PartDetailContentProps) {
     description: part.description || '',
     catalog_code: part.catalog_code || '',
     sub_catalog_code: part.sub_catalog_code || '',
+    manufacturer_id: part.manufacturer_id || '',
     drawing_url: part.drawing_url || '',
     attributes: part.attributes || {} as Record<string, any>
   })
+
+  // Fetch manufacturers when editing starts
+  useEffect(() => {
+    if (isEditing && manufacturers.length === 0) {
+      getManufacturers().then(({ data }) => {
+        if (data) setManufacturers(data)
+      })
+    }
+  }, [isEditing, manufacturers.length])
 
   // Update form data when part changes
   useEffect(() => {
@@ -68,10 +90,43 @@ export function PartDetailContent({ part }: PartDetailContentProps) {
       description: part.description || '',
       catalog_code: part.catalog_code || '',
       sub_catalog_code: part.sub_catalog_code || '',
+      manufacturer_id: part.manufacturer_id || '',
       drawing_url: part.drawing_url || '',
       attributes: part.attributes || {}
     })
   }, [part])
+
+  const handleCreateManufacturer = async () => {
+    if (!newManufacturerName.trim()) return
+
+    setIsCreatingManufacturer(true)
+    try {
+      const { data, error } = await createManufacturer(newManufacturerName.trim())
+
+      if (error) throw new Error(error)
+
+      if (data) {
+        setManufacturers(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)))
+        setFormData(prev => ({ ...prev, manufacturer_id: data.id }))
+        setIsAddingManufacturer(false)
+        setShowAddManufacturerConfirm(false)
+        setNewManufacturerName('')
+        toast({
+          title: "Success",
+          description: "New manufacturer added successfully",
+        })
+      }
+    } catch (error) {
+      console.error('Error creating manufacturer:', error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to create manufacturer",
+        variant: "destructive"
+      })
+    } finally {
+      setIsCreatingManufacturer(false)
+    }
+  }
 
   const catalog = part.catalog_code ? getCatalogByCode(part.catalog_code) : null
   const subCatalog = (part.catalog_code && part.sub_catalog_code) 
@@ -123,6 +178,7 @@ export function PartDetailContent({ part }: PartDetailContentProps) {
         description: formData.description || null,
         catalog_code: formData.catalog_code || null,
         sub_catalog_code: formData.sub_catalog_code || null,
+        manufacturer_id: formData.manufacturer_id || null,
         drawing_url: formData.drawing_url || null,
         attributes: formData.attributes
       })
@@ -199,16 +255,103 @@ export function PartDetailContent({ part }: PartDetailContentProps) {
                     />
                   </div>
                 </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="manufacturer">Manufacturer</Label>
+                  {!isAddingManufacturer ? (
+                    <Select
+                      value={formData.manufacturer_id}
+                      onValueChange={(val) => {
+                        if (val === 'new-manufacturer') {
+                          setShowAddManufacturerConfirm(true)
+                        } else {
+                          setFormData({ ...formData, manufacturer_id: val })
+                        }
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select manufacturer" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="new-manufacturer" className="text-primary font-medium">
+                          <div className="flex items-center">
+                            <Plus className="mr-2 h-4 w-4" />
+                            Add New Manufacturer
+                          </div>
+                        </SelectItem>
+                        {manufacturers.length > 0 ? (
+                          manufacturers.map((m) => (
+                            <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                          ))
+                        ) : (
+                          <div className="p-2 text-sm text-muted-foreground text-center">No manufacturers found</div>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <div className="flex items-center space-x-2">
+                      <Input 
+                        value={newManufacturerName}
+                        onChange={(e) => setNewManufacturerName(e.target.value)}
+                        placeholder="New Manufacturer Name"
+                        autoFocus
+                      />
+                      <Button size="sm" onClick={handleCreateManufacturer} disabled={isCreatingManufacturer}>
+                        {isCreatingManufacturer ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setIsAddingManufacturer(false)}>
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+
+                  {showAddManufacturerConfirm && !isAddingManufacturer && (
+                    <div className="mt-2 p-3 bg-muted/50 rounded-md border border-border">
+                      <div className="flex items-start space-x-2">
+                        <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5" />
+                        <div className="space-y-2 flex-1">
+                          <p className="text-sm font-medium">Are you sure you want to add a new manufacturer?</p>
+                          <div className="flex space-x-2">
+                            <Button 
+                              size="sm" 
+                              variant="default" 
+                              onClick={() => {
+                                setShowAddManufacturerConfirm(false)
+                                setIsAddingManufacturer(true)
+                              }}
+                            >
+                              Yes, Add New
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              variant="outline" 
+                              onClick={() => setShowAddManufacturerConfirm(false)}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
               <>
                 <h2 className="text-3xl font-bold mb-2">{part.name}</h2>
-                <div className="flex gap-4 text-sm text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <Package className="h-4 w-4" />
-                    SKU: {part.sku}
-                  </span>
-                  <span>Part #: {part.supplier_part_number}</span>
+                <div className="flex flex-col gap-1 text-sm text-muted-foreground">
+                  <div className="flex gap-4">
+                    <span className="flex items-center gap-1">
+                      <Package className="h-4 w-4" />
+                      SKU: {part.sku}
+                    </span>
+                    <span>Part #: {part.supplier_part_number}</span>
+                  </div>
+                  {part.manufacturer && (
+                    <div className="flex items-center gap-2">
+                      <Building2 className="h-4 w-4" />
+                      Manufacturer: <span className="font-medium text-foreground">{part.manufacturer.name}</span>
+                    </div>
+                  )}
                 </div>
               </>
             )}

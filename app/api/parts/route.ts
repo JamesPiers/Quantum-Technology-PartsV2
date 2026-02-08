@@ -14,14 +14,19 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search');
     const limit = parseInt(searchParams.get('limit') || '50');
     const offset = parseInt(searchParams.get('offset') || '0');
+    const getAll = searchParams.get('all') === 'true';
     const catalogCode = searchParams.get('catalog_code');
     const subCatalogCode = searchParams.get('sub_catalog_code');
+    const manufacturerId = searchParams.get('manufacturer_id');
 
     let query = supabaseAdmin
       .from('parts')
       .select('*, part_prices(*)', { count: 'exact' })
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
+      .order('created_at', { ascending: false });
+
+    if (!getAll) {
+      query = query.range(offset, offset + limit - 1);
+    }
 
     // Add search filter if provided
     if (search) {
@@ -37,6 +42,10 @@ export async function GET(request: NextRequest) {
     
     if (subCatalogCode) {
       query = query.eq('sub_catalog_code', subCatalogCode);
+    }
+
+    if (manufacturerId) {
+      query = query.eq('manufacturer_id', manufacturerId);
     }
 
     const { data, error, count } = await query;

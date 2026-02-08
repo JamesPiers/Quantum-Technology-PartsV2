@@ -47,6 +47,7 @@ export const createPartSchema = z.object({
   description: z.string().nullable().optional(),
   catalog_code: z.string().nullable().optional(),
   sub_catalog_code: z.string().nullable().optional(),
+  manufacturer_id: z.string().uuid().nullable().optional(),
   attributes: z.record(z.any()).nullable().optional(),
   drawing_url: z.string().url().nullable().optional(),
   // Optional initial price/document details
