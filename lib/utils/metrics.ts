@@ -2,13 +2,14 @@
  * Utility functions for calculating extraction accuracy metrics
  */
 
-import { NormalizedExtraction, AccuracyMetrics } from '@/lib/types/database.types';
+import type { NormalizedExtraction as SchemaNormalizedExtraction } from '@/lib/schemas/extraction.schema';
+import { AccuracyMetrics } from '@/lib/types/database.types';
 
 /**
  * Calculate accuracy metrics for an extraction
  */
 export function calculateAccuracyMetrics(
-  normalized: NormalizedExtraction,
+  normalized: SchemaNormalizedExtraction,
   responseTimeMs: number,
   tokenUsage?: number
 ): AccuracyMetrics {
@@ -23,7 +24,7 @@ export function calculateAccuracyMetrics(
 
   let fieldsPresent = 0;
   for (const field of allFields) {
-    if (normalized[field as keyof NormalizedExtraction]) {
+    if (normalized[field as keyof SchemaNormalizedExtraction]) {
       fieldsPresent++;
     }
   }
@@ -48,7 +49,7 @@ export function calculateAccuracyMetrics(
 /**
  * Validate that line items have proper structure
  */
-export function validateLineItems(normalized: NormalizedExtraction): boolean {
+export function validateLineItems(normalized: SchemaNormalizedExtraction): boolean {
   if (!normalized.line_items || normalized.line_items.length === 0) {
     return false;
   }

@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
       try {
         supplierId = await findOrCreateSupplier({
           supplierName: result.normalized.supplier_name,
-          currency: result.normalized.currency,
+          currency: result.normalized.currency ?? undefined,
         });
 
         // Update document with the correct supplier_id

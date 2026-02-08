@@ -10,10 +10,19 @@ export interface Supplier {
   created_at: string;
 }
 
+export interface Manufacturer {
+  id: string;
+  name: string;
+  description: string | null;
+  website_url: string | null;
+  created_at: string;
+}
+
 export interface Part {
   id: string;
   sku: string;
   supplier_part_number: string;
+  manufacturer_id: string | null;
   name: string;
   description: string | null;
   catalog_code: string | null;
@@ -47,6 +56,7 @@ export interface PartPriceWithRelations extends PartPrice {
 }
 
 export interface PartWithDetails extends Part {
+  manufacturer?: Manufacturer;
   prices: PartPriceWithRelations[];
   current_price?: PartPriceWithRelations;
 }
@@ -63,7 +73,7 @@ export interface Document {
 export interface Extraction {
   id: string;
   document_id: string;
-  provider: 'docai' | 'openai';
+  provider: 'docai' | 'docai-invoice' | 'openai' | 'mock';
   raw_json: Record<string, any>;
   normalized_json: NormalizedExtraction;
   accuracy: AccuracyMetrics;

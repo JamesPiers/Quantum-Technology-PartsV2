@@ -29,7 +29,7 @@ export default function PartDetailPage() {
         <div className="text-center py-12">
           <h2 className="text-2xl font-bold mb-2">Part not found</h2>
           <p className="text-muted-foreground mb-4">
-            The part you're looking for doesn't exist or has been removed.
+            The part you{"'"}re looking for doesn{"'"}t exist or has been removed.
           </p>
           <Button onClick={() => router.push('/parts')}>
             <ArrowLeft className="mr-2 h-4 w-4" />
