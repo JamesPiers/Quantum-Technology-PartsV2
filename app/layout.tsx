@@ -20,18 +20,19 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
+        <style dangerouslySetInnerHTML={{ __html: `nav[data-app-header]{background-color:#1e3a8a!important}nav[data-app-header],nav[data-app-header] a,nav[data-app-header] h1{color:#f8fafc!important;text-shadow:none!important}nav[data-app-header] a:hover{color:#fff!important}` }} />
         <QueryProvider>
           <div className="min-h-screen bg-background flex flex-col">
-            <nav className="border-b tie-dye-blue">
+            <nav data-app-header className="border-b border-blue-800/50 shadow-sm" style={{ backgroundColor: '#1e3a8a', color: '#f8fafc' }}>
               <div className="container mx-auto px-4 py-4">
                 <div className="flex items-center justify-between">
-                  <h1 className="text-2xl font-bold text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]">Quantum Technology</h1>
-                  <div className="flex space-x-4">
-                    <a href="/upload" className="text-white hover:underline drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)] font-medium">Upload</a>
-                    <a href="/parts" className="text-white hover:underline drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)] font-medium">Parts</a>
-                    <a href="/manufacturers" className="text-white hover:underline drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)] font-medium">Manufacturers</a>
+                  <h1 className="text-2xl font-bold tracking-tight" style={{ color: '#f8fafc' }}>Quantum Technology</h1>
+                  <div className="flex items-center gap-6">
+                    <a href="/upload" className="font-medium transition-colors" style={{ color: '#f8fafc' }}>Upload</a>
+                    <a href="/parts" className="font-medium transition-colors" style={{ color: '#f8fafc' }}>Parts</a>
+                    <a href="/manufacturers" className="font-medium transition-colors" style={{ color: '#f8fafc' }}>Manufacturers</a>
                     {/* Orders menu hidden for now – remove 'hidden' to reactivate */}
-                    <a href="/orders" className="hidden text-white hover:underline drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)] font-medium">Orders</a>
+                    <a href="/orders" className="hidden font-medium transition-colors" style={{ color: '#f8fafc' }}>Orders</a>
                   </div>
                 </div>
               </div>
