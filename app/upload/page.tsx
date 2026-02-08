@@ -7,9 +7,9 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/use-toast'
 import { Label } from '@/components/ui/label'
-import { Upload, FileText, Loader2, Brain, Cloud, TestTube } from 'lucide-react'
+import { Upload, FileText, Loader2, Brain, TestTube } from 'lucide-react'
 
-type ProviderType = 'mock' | 'openai' | 'docai' | 'docai-invoice'
+type ProviderType = 'mock' | 'openai'
 
 export default function UploadPage() {
   const router = useRouter()
@@ -156,7 +156,7 @@ export default function UploadPage() {
 
             <div className="space-y-3">
               <Label className="text-base font-semibold">Extraction Provider</Label>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <button
                   type="button"
                   onClick={() => setSelectedProvider('mock')}
@@ -188,44 +188,10 @@ export default function UploadPage() {
                     <p className="text-xs text-muted-foreground">GPT-4o Mini</p>
                   </div>
                 </button>
-
-                <button
-                  type="button"
-                  onClick={() => setSelectedProvider('docai')}
-                  className={`flex flex-col items-center gap-2 rounded-lg border-2 p-4 transition-all ${
-                    selectedProvider === 'docai'
-                      ? 'border-primary bg-primary/5'
-                      : 'border-muted hover:border-primary/50'
-                  }`}
-                >
-                  <Cloud className={`h-8 w-8 ${selectedProvider === 'docai' ? 'text-primary' : 'text-muted-foreground'}`} />
-                  <div className="text-center">
-                    <p className="font-medium">Doc AI</p>
-                    <p className="text-xs text-muted-foreground">General</p>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setSelectedProvider('docai-invoice')}
-                  className={`flex flex-col items-center gap-2 rounded-lg border-2 p-4 transition-all ${
-                    selectedProvider === 'docai-invoice'
-                      ? 'border-primary bg-primary/5'
-                      : 'border-muted hover:border-primary/50'
-                  }`}
-                >
-                  <Cloud className={`h-8 w-8 ${selectedProvider === 'docai-invoice' ? 'text-primary' : 'text-muted-foreground'}`} />
-                  <div className="text-center">
-                    <p className="font-medium">Doc AI</p>
-                    <p className="text-xs text-muted-foreground">Invoice</p>
-                  </div>
-                </button>
               </div>
               <p className="text-sm text-muted-foreground">
                 {selectedProvider === 'mock' && '⚡ Returns sample data instantly for testing'}
                 {selectedProvider === 'openai' && '🧠 Uses GPT-4o Mini for intelligent extraction (Recommended for supplier quotes)'}
-                {selectedProvider === 'docai' && '☁️ Uses Google Document AI General Processor (Requires custom training for quotes)'}
-                {selectedProvider === 'docai-invoice' && '📄 Uses Google Document AI Invoice Processor (For invoices only, not quotes)'}
               </p>
             </div>
 
