@@ -52,7 +52,10 @@ export default function PartDetailPage() {
           Back to Parts
         </Button>
         
-        <PartDetailContent part={part} />
+        <PartDetailContent
+          part={part}
+          onNavigateToPart={(partId) => router.push(`/parts/${partId}`)}
+        />
       </div>
     </div>
   )

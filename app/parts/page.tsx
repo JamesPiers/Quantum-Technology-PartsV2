@@ -999,7 +999,12 @@ export default function PartsPage() {
                 <Loader2 className="h-8 w-8 animate-spin" />
               </div>
             ) : selectedPart ? (
-              <PartDetailContent part={selectedPart} />
+              <PartDetailContent
+                part={selectedPart}
+                onNavigateToPart={(partId) => {
+                  setSelectedPartId(partId)
+                }}
+              />
             ) : (
               <div className="text-center py-8 text-muted-foreground">
                 Part not found

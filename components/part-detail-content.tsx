@@ -44,16 +44,20 @@ import {
 } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
 import { PriceHistoryChart } from '@/components/price-history-chart'
+import { DocumentDetailModal } from '@/components/document-detail-modal'
 
 interface PartDetailContentProps {
   part: PartWithDetails
+  onNavigateToPart?: (partId: string) => void
 }
 
-export function PartDetailContent({ part }: PartDetailContentProps) {
+export function PartDetailContent({ part, onNavigateToPart }: PartDetailContentProps) {
   const { toast } = useToast()
   const updatePart = useUpdatePart(part.id)
   const [isEditing, setIsEditing] = useState(false)
   const [manufacturers, setManufacturers] = useState<Manufacturer[]>([])
+  const [documentModalOpen, setDocumentModalOpen] = useState(false)
+  const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null)
   
   // Add Manufacturer State
   const [showAddManufacturerConfirm, setShowAddManufacturerConfirm] = useState(false)
@@ -155,7 +159,7 @@ export function PartDetailContent({ part }: PartDetailContentProps) {
       const response = await fetch(`/api/documents/${documentId}/url`)
       if (response.ok) {
         const data = await response.json()
-        return data.url
+        return data.signedUrl
       }
     } catch (error) {
       console.error('Failed to get document URL', error)
@@ -163,11 +167,9 @@ export function PartDetailContent({ part }: PartDetailContentProps) {
     return null
   }
 
-  const handleViewDocument = async (documentId: string) => {
-    const url = await getDocumentUrl(documentId)
-    if (url) {
-      window.open(url, '_blank')
-    }
+  const handleViewDocument = (documentId: string) => {
+    setSelectedDocumentId(documentId)
+    setDocumentModalOpen(true)
   }
 
   const handleSave = async () => {
@@ -898,6 +900,14 @@ export function PartDetailContent({ part }: PartDetailContentProps) {
           )}
         </div>
       </div>
+
+      {/* Document Detail Modal */}
+      <DocumentDetailModal
+        documentId={selectedDocumentId}
+        open={documentModalOpen}
+        onOpenChange={setDocumentModalOpen}
+        onPartClick={onNavigateToPart}
+      />
     </div>
   )
 }
