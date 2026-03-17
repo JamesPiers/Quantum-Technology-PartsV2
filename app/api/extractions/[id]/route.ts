@@ -121,3 +121,40 @@ export async function PATCH(
   }
 }
 
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const { error } = await supabaseAdmin
+      .from('extractions')
+      .delete()
+      .eq('id', params.id);
+
+    if (error) {
+      logger.error('Failed to delete extraction', {
+        extractionId: params.id,
+        error: error.message,
+      });
+      return NextResponse.json(
+        { error: 'Failed to delete extraction' },
+        { status: 500 }
+      );
+    }
+
+    logger.info('Extraction deleted', { extractionId: params.id });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    logger.error('Delete extraction error', {
+      extractionId: params.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+

@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/use-toast'
 import { Label } from '@/components/ui/label'
-import { Upload, FileText, Loader2, Brain, TestTube, Clock, ArrowRight, FileWarning } from 'lucide-react'
+import { Upload, FileText, Loader2, Brain, TestTube, Clock, ArrowRight, FileWarning, Trash2 } from 'lucide-react'
 
 type ProviderType = 'mock' | 'openai'
 
@@ -33,6 +33,7 @@ export default function UploadPage() {
   const [selectedProvider, setSelectedProvider] = useState<ProviderType>('openai')
   const [savedDrafts, setSavedDrafts] = useState<SavedDraft[]>([])
   const [isLoadingDrafts, setIsLoadingDrafts] = useState(true)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   useEffect(() => {
     async function fetchDrafts() {
@@ -50,6 +51,24 @@ export default function UploadPage() {
     }
     fetchDrafts()
   }, [])
+
+  const handleDeleteDraft = async (draftId: string) => {
+    if (!confirm('Delete this draft? This cannot be undone.')) return
+    setDeletingId(draftId)
+    try {
+      const res = await fetch(`/api/extractions/${draftId}`, { method: 'DELETE' })
+      if (res.ok) {
+        setSavedDrafts((prev) => prev.filter((d) => d.id !== draftId))
+        toast({ title: 'Draft deleted' })
+      } else {
+        toast({ title: 'Error', description: 'Failed to delete draft', variant: 'destructive' })
+      }
+    } catch {
+      toast({ title: 'Error', description: 'Failed to delete draft', variant: 'destructive' })
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: {
@@ -302,15 +321,29 @@ export default function UploadPage() {
                           </p>
                         </div>
                       </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => router.push(`/review/${draft.id}`)}
-                        className="flex-shrink-0 ml-4"
-                      >
-                        Resume
-                        <ArrowRight className="ml-2 h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center gap-2 flex-shrink-0 ml-4">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => router.push(`/review/${draft.id}`)}
+                        >
+                          Resume
+                          <ArrowRight className="ml-2 h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDeleteDraft(draft.id)}
+                          disabled={deletingId === draft.id}
+                          className="text-muted-foreground hover:text-destructive"
+                        >
+                          {deletingId === draft.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
                     </div>
                   )
                 })}
