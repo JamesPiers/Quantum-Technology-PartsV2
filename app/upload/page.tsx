@@ -1,15 +1,29 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useDropzone } from 'react-dropzone'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/use-toast'
 import { Label } from '@/components/ui/label'
-import { Upload, FileText, Loader2, Brain, TestTube } from 'lucide-react'
+import { Upload, FileText, Loader2, Brain, TestTube, Clock, ArrowRight, FileWarning } from 'lucide-react'
 
 type ProviderType = 'mock' | 'openai'
+
+interface SavedDraft {
+  id: string
+  status: string
+  created_at: string
+  normalized_json: any
+  accuracy: any
+  documents: {
+    file_path: string
+    doc_type: string
+    status: string
+    created_at: string
+  }[]
+}
 
 export default function UploadPage() {
   const router = useRouter()
@@ -17,6 +31,25 @@ export default function UploadPage() {
   const [isUploading, setIsUploading] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [selectedProvider, setSelectedProvider] = useState<ProviderType>('openai')
+  const [savedDrafts, setSavedDrafts] = useState<SavedDraft[]>([])
+  const [isLoadingDrafts, setIsLoadingDrafts] = useState(true)
+
+  useEffect(() => {
+    async function fetchDrafts() {
+      try {
+        const res = await fetch('/api/extractions?status=draft,pending_review')
+        if (res.ok) {
+          const json = await res.json()
+          setSavedDrafts(json.data || [])
+        }
+      } catch (err) {
+        console.error('Failed to fetch saved drafts:', err)
+      } finally {
+        setIsLoadingDrafts(false)
+      }
+    }
+    fetchDrafts()
+  }, [])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: {
@@ -223,6 +256,75 @@ export default function UploadPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Saved Drafts Section */}
+        {!isLoadingDrafts && savedDrafts.length > 0 && (
+          <Card className="mt-6">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Clock className="h-5 w-5" />
+                Saved Drafts
+              </CardTitle>
+              <CardDescription>
+                Resume reviewing previously uploaded quotes
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {savedDrafts.map((draft) => {
+                  const draftName = draft.accuracy?.draft_name || 'Unnamed Draft'
+                  const savedAt = draft.accuracy?.saved_at
+                    ? new Date(draft.accuracy.saved_at).toLocaleDateString('en-US', {
+                        month: 'short', day: 'numeric', year: 'numeric',
+                        hour: '2-digit', minute: '2-digit',
+                      })
+                    : new Date(draft.created_at).toLocaleDateString('en-US', {
+                        month: 'short', day: 'numeric', year: 'numeric',
+                      })
+                  const lineItemCount = draft.normalized_json?.line_items?.length || 0
+                  const supplierName = draft.normalized_json?.supplier_name || 'Unknown Supplier'
+                  const fileName = draft.documents?.[0]?.file_path?.split('/').pop() || 'Unknown file'
+
+                  return (
+                    <div
+                      key={draft.id}
+                      className="flex items-center justify-between p-4 rounded-lg border hover:bg-muted/50 transition-colors"
+                    >
+                      <div className="flex items-start gap-3 min-w-0">
+                        <FileWarning className="h-5 w-5 text-orange-500 mt-0.5 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <p className="font-medium truncate">{draftName}</p>
+                          <p className="text-sm text-muted-foreground truncate">
+                            {supplierName} &middot; {lineItemCount} line item{lineItemCount !== 1 ? 's' : ''}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {fileName} &middot; Saved {savedAt}
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => router.push(`/review/${draft.id}`)}
+                        className="flex-shrink-0 ml-4"
+                      >
+                        Resume
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                      </Button>
+                    </div>
+                  )
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {isLoadingDrafts && (
+          <div className="mt-6 flex items-center justify-center py-4">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            <span className="ml-2 text-sm text-muted-foreground">Loading saved drafts...</span>
+          </div>
+        )}
       </div>
     </div>
   )

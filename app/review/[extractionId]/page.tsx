@@ -18,13 +18,7 @@ import {
 } from '@/components/ui/table'
 import { Loader2, CheckCircle, XCircle, ExternalLink, Pencil, ChevronDown, ChevronUp, AlertTriangle, AlertCircle, Info } from 'lucide-react'
 import { Extraction } from '@/lib/types/database.types'
-import { EditLineItemDialog, LineItem } from '@/components/edit-line-item-dialog'
-
-type ItemStatus = 'green' | 'orange' | 'red'
-interface ItemValidation {
-  status: ItemStatus
-  reasons: string[]
-}
+import { EditLineItemDialog, LineItem, LineItemValidation } from '@/components/edit-line-item-dialog'
 
 export default function ReviewPage({
   params,
@@ -52,6 +46,9 @@ export default function ReviewPage({
   const [showPrompt, setShowPrompt] = useState(false)
   const [showRawResponse, setShowRawResponse] = useState(false)
   const [existingParts, setExistingParts] = useState<Map<string, any>>(new Map())
+  const [isSavingDraft, setIsSavingDraft] = useState(false)
+  const [showSaveDialog, setShowSaveDialog] = useState(false)
+  const [draftName, setDraftName] = useState('')
 
   // Fetch extraction data
   const { data: extraction, isLoading, error } = useQuery({
@@ -117,7 +114,7 @@ export default function ReviewPage({
   }, [lineItems.length])
 
   // Compute validation status for each line item
-  const itemValidations = useMemo((): ItemValidation[] => {
+  const itemValidations = useMemo((): LineItemValidation[] => {
     // Count occurrences of each supplier_part_number within the extraction
     const partNumberCounts = new Map<string, number>()
     for (const item of lineItems) {
@@ -134,15 +131,18 @@ export default function ReviewPage({
 
     return lineItems.map((item) => {
       const reasons: string[] = []
-      let status: ItemStatus = 'green'
+      let status: LineItemValidation['status'] = 'green'
+      let duplicateSku = false
+      let missingCatalog = false
+      let missingSubCatalog = false
 
       const sku = item.sku || `SKU-${item.supplier_part_number}`
       const skuCount = skuCounts.get(sku) || 0
-      const pnCount = partNumberCounts.get(item.supplier_part_number) || 0
 
       // RED: Duplicate SKU within this extraction (will overwrite each other)
       if (skuCount > 1) {
         status = 'red'
+        duplicateSku = true
         reasons.push(`Duplicate SKU "${sku}" — ${skuCount} items will have the same SKU. Edit to make each unique.`)
       }
 
@@ -158,10 +158,12 @@ export default function ReviewPage({
       // ORANGE: Missing catalog/sub-catalog
       if (!item.catalog_code) {
         if (status === 'green') status = 'orange'
+        missingCatalog = true
         reasons.push('No catalog assigned.')
       }
       if (item.catalog_code && !item.sub_catalog_code) {
         if (status === 'green') status = 'orange'
+        missingSubCatalog = true
         reasons.push('No sub-catalog assigned.')
       }
 
@@ -169,7 +171,7 @@ export default function ReviewPage({
         reasons.push('Ready for import.')
       }
 
-      return { status, reasons }
+      return { status, reasons, duplicateSku, missingCatalog, missingSubCatalog }
     })
   }, [lineItems, existingParts])
 
@@ -261,6 +263,48 @@ export default function ReviewPage({
   const handleEditItem = (index: number) => {
     setEditingItemIndex(index)
     setIsEditDialogOpen(true)
+  }
+
+  const handleSaveDraft = async () => {
+    if (!draftName.trim()) {
+      toast({
+        title: 'Name required',
+        description: 'Please enter a name for this draft.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    setIsSavingDraft(true)
+    try {
+      const response = await fetch(`/api/extractions/${params.extractionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          supplierInfo,
+          lineItems,
+          draftName: draftName.trim(),
+        }),
+      })
+
+      if (!response.ok) throw new Error('Failed to save draft')
+
+      toast({
+        title: 'Draft saved',
+        description: `"${draftName.trim()}" has been saved. You can resume it from the Upload page.`,
+      })
+
+      setShowSaveDialog(false)
+      setDraftName('')
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to save draft',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsSavingDraft(false)
+    }
   }
 
   const handleSaveLineItem = (updatedItem: LineItem) => {
@@ -543,9 +587,64 @@ export default function ReviewPage({
                     </>
                   )}
                 </Button>
+                <Button
+                  onClick={() => setShowSaveDialog(true)}
+                  disabled={isApproving || isRejecting || isSavingDraft}
+                  variant="outline"
+                  size="lg"
+                >
+                  {isSavingDraft ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Save Progress'
+                  )}
+                </Button>
               </div>
             </CardContent>
           </Card>
+
+          {/* Save Draft Dialog */}
+          {showSaveDialog && (
+            <Card>
+              <CardContent className="pt-6">
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="font-semibold mb-1">Save Progress</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Give this draft a name so you can find it later on the Upload page.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Draft Name</Label>
+                    <Input
+                      value={draftName}
+                      onChange={(e) => setDraftName(e.target.value)}
+                      placeholder="e.g. Spartan Controls Q1 2026"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <Button variant="outline" onClick={() => { setShowSaveDialog(false); setDraftName('') }}>
+                      Cancel
+                    </Button>
+                    <Button onClick={handleSaveDraft} disabled={isSavingDraft}>
+                      {isSavingDraft ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        'Save Draft'
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* AI Logs Section */}
           <div className="grid md:grid-cols-2 gap-6">
@@ -641,14 +740,15 @@ export default function ReviewPage({
       </div>
       
       {editingItemIndex !== null && lineItems[editingItemIndex] && (
-        <EditLineItemDialog 
-          open={isEditDialogOpen} 
+        <EditLineItemDialog
+          open={isEditDialogOpen}
           onOpenChange={(open) => {
             setIsEditDialogOpen(open)
             if (!open) setEditingItemIndex(null)
           }}
           data={lineItems[editingItemIndex]}
           onSave={handleSaveLineItem}
+          validation={itemValidations[editingItemIndex]}
         />
       )}
     </div>

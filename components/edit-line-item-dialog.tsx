@@ -30,14 +30,23 @@ export interface LineItem {
   attributes?: Record<string, string>
 }
 
+export interface LineItemValidation {
+  status: 'green' | 'orange' | 'red'
+  reasons: string[]
+  duplicateSku?: boolean
+  missingCatalog?: boolean
+  missingSubCatalog?: boolean
+}
+
 interface EditLineItemDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   data: LineItem
   onSave: (updatedItem: LineItem) => void
+  validation?: LineItemValidation
 }
 
-export function EditLineItemDialog({ open, onOpenChange, data, onSave }: EditLineItemDialogProps) {
+export function EditLineItemDialog({ open, onOpenChange, data, onSave, validation }: EditLineItemDialogProps) {
   const { toast } = useToast()
   const [manufacturers, setManufacturers] = useState<Manufacturer[]>([])
   
@@ -46,6 +55,10 @@ export function EditLineItemDialog({ open, onOpenChange, data, onSave }: EditLin
   const [isAddingManufacturer, setIsAddingManufacturer] = useState(false)
   const [newManufacturerName, setNewManufacturerName] = useState('')
   const [isCreatingManufacturer, setIsCreatingManufacturer] = useState(false)
+
+  // Warning state
+  const [showWarning, setShowWarning] = useState(false)
+  const [warningMessages, setWarningMessages] = useState<string[]>([])
 
   // Form State
   const [formData, setFormData] = useState<LineItem>(data)
@@ -146,8 +159,33 @@ export function EditLineItemDialog({ open, onOpenChange, data, onSave }: EditLin
     }))
   }
 
+  const checkForWarnings = (): string[] => {
+    const warnings: string[] = []
+
+    // Check if duplicate SKU is still unresolved
+    if (validation?.duplicateSku) {
+      const currentSku = formData.sku || `SKU-${formData.supplier_part_number}`
+      const originalSku = data.sku || `SKU-${data.supplier_part_number}`
+      if (currentSku === originalSku) {
+        warnings.push('This item still has a duplicate SKU. Importing without changing it will overwrite other parts with the same SKU.')
+      }
+    }
+
+    // Check missing catalog
+    if (!formData.catalog_code) {
+      warnings.push('No catalog has been assigned. Assigning a catalog helps keep your parts data well-organized and searchable.')
+    }
+
+    // Check missing sub-catalog
+    if (formData.catalog_code && !formData.sub_catalog_code) {
+      warnings.push('No sub-catalog has been assigned. This is recommended for better categorization.')
+    }
+
+    return warnings
+  }
+
   const handleSave = () => {
-    // Basic validation if needed
+    // Basic validation - hard block
     if (!formData.supplier_part_number || !formData.description) {
       toast({
         title: "Validation Error",
@@ -157,6 +195,20 @@ export function EditLineItemDialog({ open, onOpenChange, data, onSave }: EditLin
       return
     }
 
+    // Check for soft warnings
+    const warnings = checkForWarnings()
+    if (warnings.length > 0) {
+      setWarningMessages(warnings)
+      setShowWarning(true)
+      return
+    }
+
+    onSave(formData)
+    onOpenChange(false)
+  }
+
+  const handleSaveAnyway = () => {
+    setShowWarning(false)
     onSave(formData)
     onOpenChange(false)
   }
@@ -167,6 +219,47 @@ export function EditLineItemDialog({ open, onOpenChange, data, onSave }: EditLin
         <DialogHeader>
           <DialogTitle>Edit Line Item</DialogTitle>
         </DialogHeader>
+
+        {/* Validation banner */}
+        {validation && validation.status !== 'green' && (
+          <div className={`flex items-start gap-2 p-3 rounded-lg text-sm ${
+            validation.status === 'red'
+              ? 'bg-red-50 border border-red-200 text-red-800'
+              : 'bg-amber-50 border border-amber-200 text-amber-800'
+          }`}>
+            <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+            <div>
+              {validation.reasons.map((r, i) => (
+                <div key={i}>{r}</div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Save warning overlay */}
+        {showWarning && (
+          <div className="p-4 rounded-lg border-2 border-amber-300 bg-amber-50">
+            <div className="flex items-start gap-2 mb-3">
+              <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold text-amber-800 mb-2">Are you sure you want to save without resolving these?</p>
+                <ul className="space-y-1">
+                  {warningMessages.map((msg, i) => (
+                    <li key={i} className="text-sm text-amber-700">• {msg}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button size="sm" variant="outline" onClick={() => setShowWarning(false)}>
+                Go Back & Fix
+              </Button>
+              <Button size="sm" variant="default" onClick={handleSaveAnyway}>
+                Save Anyway
+              </Button>
+            </div>
+          </div>
+        )}
 
         <div className="grid gap-6 py-4">
           {/* Basic Details */}
@@ -180,13 +273,19 @@ export function EditLineItemDialog({ open, onOpenChange, data, onSave }: EditLin
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="sku">SKU (Optional)</Label>
+              <Label htmlFor="sku" className={validation?.duplicateSku ? 'text-red-600 font-semibold' : ''}>
+                SKU {validation?.duplicateSku ? '(Duplicate — must change)' : '(Optional)'}
+              </Label>
               <Input
                 id="sku"
                 value={formData.sku || ''}
                 onChange={(e) => handleChange('sku', e.target.value)}
                 placeholder={`SKU-${formData.supplier_part_number}`}
+                className={validation?.duplicateSku ? 'border-red-400 ring-1 ring-red-300 focus-visible:ring-red-500' : ''}
               />
+              {validation?.duplicateSku && (
+                <p className="text-xs text-red-600">Multiple items share this SKU. Give this item a unique SKU to avoid overwriting data.</p>
+              )}
             </div>
             <div className="col-span-2 space-y-2">
               <Label htmlFor="description">Description *</Label>
@@ -311,9 +410,11 @@ export function EditLineItemDialog({ open, onOpenChange, data, onSave }: EditLin
             <h3 className="font-semibold mb-4">Categorization</h3>
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div className="space-y-2">
-                <Label htmlFor="catalog">Catalog</Label>
-                <Select 
-                  value={formData.catalog_code || ''} 
+                <Label htmlFor="catalog" className={validation?.missingCatalog ? 'text-amber-600 font-semibold' : ''}>
+                  Catalog {validation?.missingCatalog ? '(Recommended)' : ''}
+                </Label>
+                <Select
+                  value={formData.catalog_code || ''}
                   onValueChange={(val) => {
                     setFormData(prev => ({
                       ...prev,
@@ -323,7 +424,7 @@ export function EditLineItemDialog({ open, onOpenChange, data, onSave }: EditLin
                     }))
                   }}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className={validation?.missingCatalog && !formData.catalog_code ? 'border-amber-400 ring-1 ring-amber-300' : ''}>
                     <SelectValue placeholder="Select Catalog" />
                   </SelectTrigger>
                   <SelectContent className="max-h-[200px]">
@@ -335,13 +436,15 @@ export function EditLineItemDialog({ open, onOpenChange, data, onSave }: EditLin
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="sub_catalog">Sub-Catalog</Label>
-                <Select 
-                  value={formData.sub_catalog_code || ''} 
+                <Label htmlFor="sub_catalog" className={validation?.missingSubCatalog ? 'text-amber-600 font-semibold' : ''}>
+                  Sub-Catalog {validation?.missingSubCatalog ? '(Recommended)' : ''}
+                </Label>
+                <Select
+                  value={formData.sub_catalog_code || ''}
                   onValueChange={(val) => handleChange('sub_catalog_code', val)}
                   disabled={!formData.catalog_code}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className={validation?.missingSubCatalog && formData.catalog_code && !formData.sub_catalog_code ? 'border-amber-400 ring-1 ring-amber-300' : ''}>
                     <SelectValue placeholder="Select Sub-Catalog" />
                   </SelectTrigger>
                   <SelectContent className="max-h-[200px]">
