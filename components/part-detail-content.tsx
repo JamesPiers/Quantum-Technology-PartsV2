@@ -45,19 +45,22 @@ import {
 import { useToast } from '@/components/ui/use-toast'
 import { PriceHistoryChart } from '@/components/price-history-chart'
 import { DocumentDetailModal } from '@/components/document-detail-modal'
+import { AddPriceDialog } from '@/components/add-price-dialog'
 
 interface PartDetailContentProps {
   part: PartWithDetails
   onNavigateToPart?: (partId: string) => void
+  onPartUpdated?: () => void
 }
 
-export function PartDetailContent({ part, onNavigateToPart }: PartDetailContentProps) {
+export function PartDetailContent({ part, onNavigateToPart, onPartUpdated }: PartDetailContentProps) {
   const { toast } = useToast()
   const updatePart = useUpdatePart(part.id)
   const [isEditing, setIsEditing] = useState(false)
   const [manufacturers, setManufacturers] = useState<Manufacturer[]>([])
   const [documentModalOpen, setDocumentModalOpen] = useState(false)
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null)
+  const [addPriceOpen, setAddPriceOpen] = useState(false)
   
   // Add Manufacturer State
   const [showAddManufacturerConfirm, setShowAddManufacturerConfirm] = useState(false)
@@ -665,13 +668,23 @@ export function PartDetailContent({ part, onNavigateToPart }: PartDetailContentP
           {/* Price History - Always visible, read only for now as per requirements only fields edit */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="h-5 w-5" />
-                Price History
-                <span className="text-sm font-normal text-muted-foreground ml-2">
-                  ({part.prices.length} {part.prices.length === 1 ? 'record' : 'records'})
-                </span>
-              </CardTitle>
+              <div className="flex items-center justify-between w-full">
+                <CardTitle className="flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5" />
+                  Price History
+                  <span className="text-sm font-normal text-muted-foreground ml-2">
+                    ({part.prices.length} {part.prices.length === 1 ? 'record' : 'records'})
+                  </span>
+                </CardTitle>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAddPriceOpen(true)}
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Update Price
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {part.prices.length === 0 ? (
@@ -907,6 +920,19 @@ export function PartDetailContent({ part, onNavigateToPart }: PartDetailContentP
         open={documentModalOpen}
         onOpenChange={setDocumentModalOpen}
         onPartClick={onNavigateToPart}
+      />
+
+      {/* Add Price Dialog */}
+      <AddPriceDialog
+        partId={part.id}
+        partName={part.name}
+        open={addPriceOpen}
+        onOpenChange={setAddPriceOpen}
+        onPriceAdded={() => {
+          // Trigger a refetch of the part data
+          if (onPartUpdated) onPartUpdated()
+          else window.location.reload()
+        }}
       />
     </div>
   )

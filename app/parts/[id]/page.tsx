@@ -1,6 +1,7 @@
 'use client'
 
 import { useParams, useRouter } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import { usePart } from '@/lib/hooks/use-parts'
 import { Button } from '@/components/ui/button'
 import { PartDetailContent } from '@/components/part-detail-content'
@@ -9,6 +10,7 @@ import { Loader2, ArrowLeft } from 'lucide-react'
 export default function PartDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const queryClient = useQueryClient()
   const partId = params.id as string
 
   const { data: part, isLoading, error } = usePart(partId)
@@ -55,6 +57,7 @@ export default function PartDetailPage() {
         <PartDetailContent
           part={part}
           onNavigateToPart={(partId) => router.push(`/parts/${partId}`)}
+          onPartUpdated={() => queryClient.invalidateQueries({ queryKey: ['part', partId] })}
         />
       </div>
     </div>

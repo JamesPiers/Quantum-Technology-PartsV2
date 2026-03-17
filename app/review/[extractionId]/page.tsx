@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
@@ -16,9 +16,15 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Loader2, CheckCircle, XCircle, ExternalLink, Pencil, ChevronDown, ChevronUp } from 'lucide-react'
+import { Loader2, CheckCircle, XCircle, ExternalLink, Pencil, ChevronDown, ChevronUp, AlertTriangle, AlertCircle, Info } from 'lucide-react'
 import { Extraction } from '@/lib/types/database.types'
 import { EditLineItemDialog, LineItem } from '@/components/edit-line-item-dialog'
+
+type ItemStatus = 'green' | 'orange' | 'red'
+interface ItemValidation {
+  status: ItemStatus
+  reasons: string[]
+}
 
 export default function ReviewPage({
   params,
@@ -45,6 +51,7 @@ export default function ReviewPage({
   const [documentUrl, setDocumentUrl] = useState<string | null>(null)
   const [showPrompt, setShowPrompt] = useState(false)
   const [showRawResponse, setShowRawResponse] = useState(false)
+  const [existingParts, setExistingParts] = useState<Map<string, any>>(new Map())
 
   // Fetch extraction data
   const { data: extraction, isLoading, error } = useQuery({
@@ -82,6 +89,95 @@ export default function ReviewPage({
         .catch(err => console.error('Failed to get document URL:', err))
     }
   }, [extraction])
+
+  // Fetch existing parts to check for matches
+  useEffect(() => {
+    if (lineItems.length === 0) return
+    const skus = lineItems.map(item => item.sku || `SKU-${item.supplier_part_number}`)
+    const partNumbers = lineItems.map(item => item.supplier_part_number)
+    const searchTerms = [...new Set([...skus, ...partNumbers])]
+
+    // Fetch all parts to check for existing matches
+    fetch(`/api/parts?all=true`)
+      .then(res => res.json())
+      .then(data => {
+        const partsMap = new Map<string, any>()
+        if (data.data) {
+          for (const part of data.data) {
+            partsMap.set(part.sku, part)
+            // Also index by supplier_part_number for matching
+            if (!partsMap.has(`spn:${part.supplier_part_number}`)) {
+              partsMap.set(`spn:${part.supplier_part_number}`, part)
+            }
+          }
+        }
+        setExistingParts(partsMap)
+      })
+      .catch(err => console.error('Failed to fetch existing parts:', err))
+  }, [lineItems.length])
+
+  // Compute validation status for each line item
+  const itemValidations = useMemo((): ItemValidation[] => {
+    // Count occurrences of each supplier_part_number within the extraction
+    const partNumberCounts = new Map<string, number>()
+    for (const item of lineItems) {
+      const pn = item.supplier_part_number
+      partNumberCounts.set(pn, (partNumberCounts.get(pn) || 0) + 1)
+    }
+
+    // Also count SKUs to detect SKU collisions
+    const skuCounts = new Map<string, number>()
+    for (const item of lineItems) {
+      const sku = item.sku || `SKU-${item.supplier_part_number}`
+      skuCounts.set(sku, (skuCounts.get(sku) || 0) + 1)
+    }
+
+    return lineItems.map((item) => {
+      const reasons: string[] = []
+      let status: ItemStatus = 'green'
+
+      const sku = item.sku || `SKU-${item.supplier_part_number}`
+      const skuCount = skuCounts.get(sku) || 0
+      const pnCount = partNumberCounts.get(item.supplier_part_number) || 0
+
+      // RED: Duplicate SKU within this extraction (will overwrite each other)
+      if (skuCount > 1) {
+        status = 'red'
+        reasons.push(`Duplicate SKU "${sku}" — ${skuCount} items will have the same SKU. Edit to make each unique.`)
+      }
+
+      // ORANGE: Existing part in system (will update)
+      if (status !== 'red') {
+        const existingBySku = existingParts.get(sku)
+        if (existingBySku) {
+          status = 'orange'
+          reasons.push(`SKU "${sku}" already exists — this will update the existing part with new pricing.`)
+        }
+      }
+
+      // ORANGE: Missing catalog/sub-catalog
+      if (!item.catalog_code) {
+        if (status === 'green') status = 'orange'
+        reasons.push('No catalog assigned.')
+      }
+      if (item.catalog_code && !item.sub_catalog_code) {
+        if (status === 'green') status = 'orange'
+        reasons.push('No sub-catalog assigned.')
+      }
+
+      if (status === 'green') {
+        reasons.push('Ready for import.')
+      }
+
+      return { status, reasons }
+    })
+  }, [lineItems, existingParts])
+
+  // Check if any items are red (blocks approval)
+  const hasRedItems = itemValidations.some(v => v.status === 'red')
+  const redCount = itemValidations.filter(v => v.status === 'red').length
+  const orangeCount = itemValidations.filter(v => v.status === 'orange').length
+  const greenCount = itemValidations.filter(v => v.status === 'green').length
 
   const handleApprove = async () => {
     setIsApproving(true)
@@ -284,6 +380,30 @@ export default function ReviewPage({
             </CardContent>
           </Card>
 
+          {/* Validation Summary */}
+          {lineItems.length > 0 && (
+            <div className="flex flex-wrap gap-3">
+              {redCount > 0 && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-red-800 text-sm">
+                  <XCircle className="h-4 w-4" />
+                  <span><strong>{redCount}</strong> duplicate {redCount === 1 ? 'SKU needs' : 'SKUs need'} fixing</span>
+                </div>
+              )}
+              {orangeCount > 0 && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+                  <AlertTriangle className="h-4 w-4" />
+                  <span><strong>{orangeCount}</strong> {orangeCount === 1 ? 'item needs' : 'items need'} review</span>
+                </div>
+              )}
+              {greenCount > 0 && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-50 border border-green-200 text-green-800 text-sm">
+                  <CheckCircle className="h-4 w-4" />
+                  <span><strong>{greenCount}</strong> ready for import</span>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Line Items Table */}
           <Card>
             <CardHeader>
@@ -293,6 +413,7 @@ export default function ReviewPage({
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-[40px]"></TableHead>
                     <TableHead className="w-[150px]">Part Number</TableHead>
                     <TableHead>Description</TableHead>
                     <TableHead className="w-[100px]">UOM</TableHead>
@@ -303,44 +424,71 @@ export default function ReviewPage({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {lineItems.map((item, index) => (
-                    <TableRow key={index}>
-                      <TableCell>
-                        <div className="font-medium">{item.supplier_part_number}</div>
-                        {item.sku && <div className="text-xs text-muted-foreground">{item.sku}</div>}
-                      </TableCell>
-                      <TableCell>
-                        <div>{item.description}</div>
-                      </TableCell>
-                      <TableCell>
-                        <div>{item.uom || '-'}</div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-sm">
-                          {item.qty_breaks?.map((qb, qbIndex) => (
-                            <div key={qbIndex}>
-                              {qb.min_qty}+: ${qb.unit_price}
+                  {lineItems.map((item, index) => {
+                    const validation = itemValidations[index]
+                    const rowBg = validation?.status === 'red'
+                      ? 'bg-red-50 hover:bg-red-100/80'
+                      : validation?.status === 'orange'
+                      ? 'bg-amber-50 hover:bg-amber-100/80'
+                      : 'hover:bg-green-50/50'
+                    const statusIcon = validation?.status === 'red'
+                      ? <XCircle className="h-4 w-4 text-red-500" />
+                      : validation?.status === 'orange'
+                      ? <AlertTriangle className="h-4 w-4 text-amber-500" />
+                      : <CheckCircle className="h-4 w-4 text-green-500" />
+
+                    return (
+                      <TableRow key={index} className={rowBg}>
+                        <TableCell className="pr-0">
+                          <div className="relative group">
+                            {statusIcon}
+                            {/* Tooltip */}
+                            <div className="absolute left-6 top-0 z-50 hidden group-hover:block w-72 p-2 bg-white border rounded-lg shadow-lg text-xs">
+                              {validation?.reasons.map((r, i) => (
+                                <div key={i} className="py-0.5">{r}</div>
+                              ))}
                             </div>
-                          ))}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div>{item.lead_time_days ? `${item.lead_time_days} days` : '-'}</div>
-                      </TableCell>
-                      <TableCell>
-                        <div>{item.moq || '-'}</div>
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleEditItem(index)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium">{item.supplier_part_number}</div>
+                          <div className="text-xs text-muted-foreground">
+                            SKU: {item.sku || `SKU-${item.supplier_part_number}`}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div>{item.description}</div>
+                        </TableCell>
+                        <TableCell>
+                          <div>{item.uom || '-'}</div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            {item.qty_breaks?.map((qb, qbIndex) => (
+                              <div key={qbIndex}>
+                                {qb.min_qty}+: ${qb.unit_price}
+                              </div>
+                            ))}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div>{item.lead_time_days ? `${item.lead_time_days} days` : '-'}</div>
+                        </TableCell>
+                        <TableCell>
+                          <div>{item.moq || '-'}</div>
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleEditItem(index)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
                 </TableBody>
               </Table>
             </CardContent>
@@ -349,11 +497,21 @@ export default function ReviewPage({
           {/* Actions */}
           <Card>
             <CardContent className="pt-6">
+              {hasRedItems && (
+                <div className="mb-4 flex items-center gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-red-800 text-sm">
+                  <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                  <span>
+                    <strong>{redCount} {redCount === 1 ? 'item has a' : 'items have'} duplicate SKU.</strong>{' '}
+                    Edit the affected items (highlighted in red) to give each a unique SKU before approving.
+                  </span>
+                </div>
+              )}
               <div className="flex gap-4">
                 <Button
                   onClick={handleApprove}
-                  disabled={isApproving || isRejecting}
+                  disabled={isApproving || isRejecting || hasRedItems}
                   size="lg"
+                  title={hasRedItems ? 'Resolve duplicate SKUs before approving' : undefined}
                 >
                   {isApproving ? (
                     <>

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRef } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -59,6 +59,7 @@ type SortOrder = 'asc' | 'desc'
 export default function PartsPage() {
   const router = useRouter()
   const { toast } = useToast()
+  const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [page, setPage] = useState(0)
@@ -1003,6 +1004,10 @@ export default function PartsPage() {
                 part={selectedPart}
                 onNavigateToPart={(partId) => {
                   setSelectedPartId(partId)
+                }}
+                onPartUpdated={() => {
+                  queryClient.invalidateQueries({ queryKey: ['part', selectedPartId] })
+                  refetch()
                 }}
               />
             ) : (
