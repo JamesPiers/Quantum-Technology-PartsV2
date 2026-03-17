@@ -43,6 +43,7 @@ import {
   AlertCircle
 } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
+import { PriceHistoryChart } from '@/components/price-history-chart'
 
 interface PartDetailContentProps {
   part: PartWithDetails
@@ -676,6 +677,17 @@ export function PartDetailContent({ part }: PartDetailContentProps) {
                   No pricing information available
                 </div>
               ) : (
+                <div className="space-y-6">
+                  {/* Price History Chart */}
+                  {part.prices.length >= 1 && (
+                    <div className="rounded-lg border bg-card p-4">
+                      <PriceHistoryChart
+                        prices={part.prices}
+                        currentPriceId={part.current_price?.id}
+                      />
+                    </div>
+                  )}
+
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
@@ -749,6 +761,7 @@ export function PartDetailContent({ part }: PartDetailContentProps) {
                       })}
                     </TableBody>
                   </Table>
+                </div>
                 </div>
               )}
             </CardContent>

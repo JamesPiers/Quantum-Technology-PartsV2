@@ -16,12 +16,19 @@ import { normalizeDate, normalizeCurrency, computeValidUntil } from '@/lib/utils
 let pdfParse: any;
 
 export class OpenAIProvider implements IExtractionProvider {
-  private client: OpenAI;
+  private client: OpenAI | null = null;
 
-  constructor() {
-    this.client = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
+  private getClient(): OpenAI {
+    if (!this.client) {
+      const apiKey = process.env.OPENAI_API_KEY;
+      if (!apiKey || apiKey.trim() === '') {
+        throw new Error(
+          'OpenAI API key is not configured. Please add a valid OPENAI_API_KEY to your .env.local file and restart the server.'
+        );
+      }
+      this.client = new OpenAI({ apiKey });
+    }
+    return this.client;
   }
 
   getName(): string {
@@ -130,7 +137,7 @@ export class OpenAIProvider implements IExtractionProvider {
             textLength: pdfText.length,
           });
 
-          const completion = await this.client.chat.completions.create({
+          const completion = await this.getClient().chat.completions.create({
             model: 'gpt-4o-mini',
             messages: [
               {

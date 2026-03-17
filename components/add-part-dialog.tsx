@@ -51,6 +51,7 @@ export function AddPartDialog({ open, onOpenChange, onSuccess }: AddPartDialogPr
     supplier_part_number: '',
     name: '',
     description: '',
+    drawing_url: '',
     supplier_id: '',
     manufacturer_id: '',
     unit_price: '',
@@ -279,6 +280,7 @@ export function AddPartDialog({ open, onOpenChange, onSuccess }: AddPartDialogPr
         catalog_code: formData.catalog_code || null,
         sub_catalog_code: formData.sub_catalog_code || null,
         manufacturer_id: formData.manufacturer_id || null,
+        drawing_url: formData.drawing_url || null,
         attributes: Object.keys(formData.attributes).length > 0 ? formData.attributes : null,
       }
 
@@ -315,6 +317,7 @@ export function AddPartDialog({ open, onOpenChange, onSuccess }: AddPartDialogPr
         supplier_part_number: '',
         name: '',
         description: '',
+        drawing_url: '',
         supplier_id: '',
         manufacturer_id: '',
         unit_price: '',
@@ -388,6 +391,16 @@ export function AddPartDialog({ open, onOpenChange, onSuccess }: AddPartDialogPr
                 value={formData.description}
                 onChange={(e) => handleChange('description', e.target.value)}
                 placeholder="Part description..."
+              />
+            </div>
+
+            <div className="col-span-2 space-y-2">
+              <Label htmlFor="drawing_url">Technical Drawing URL</Label>
+              <Input
+                id="drawing_url"
+                value={formData.drawing_url}
+                onChange={(e) => handleChange('drawing_url', e.target.value)}
+                placeholder="https://..."
               />
             </div>
 

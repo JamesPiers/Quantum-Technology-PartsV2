@@ -84,8 +84,14 @@ export default function UploadPage() {
 
       if (!extractResponse.ok) {
         const errorData = await extractResponse.json().catch(() => ({ error: 'Failed to start extraction' }))
-        const errorMessage = errorData.details 
-          ? `${errorData.error}: ${errorData.details}` 
+
+        // Provide user-friendly message for configuration errors
+        if (extractResponse.status === 503 || (errorData.message && errorData.message.includes('API key'))) {
+          throw new Error('OpenAI API key is not configured. Please add a valid OPENAI_API_KEY to your .env.local file and restart the server. Alternatively, use the "Mock Data" provider for testing.')
+        }
+
+        const errorMessage = errorData.details
+          ? `${errorData.error}: ${errorData.details}`
           : errorData.message || errorData.error || 'Failed to start extraction'
         throw new Error(errorMessage)
       }

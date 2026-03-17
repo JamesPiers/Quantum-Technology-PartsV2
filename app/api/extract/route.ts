@@ -91,9 +91,15 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      const errorMsg = extractionError instanceof Error ? extractionError.message : String(extractionError);
+      const isConfigError = errorMsg.includes('API key') || errorMsg.includes('OPENAI_API_KEY');
+
       return NextResponse.json(
-        { error: 'Extraction failed', message: extractionError instanceof Error ? extractionError.message : String(extractionError) },
-        { status: 500 }
+        {
+          error: isConfigError ? 'Configuration error' : 'Extraction failed',
+          message: errorMsg
+        },
+        { status: isConfigError ? 503 : 500 }
       );
     }
 
